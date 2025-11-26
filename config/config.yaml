@@ -1,0 +1,22 @@
+app:
+  name: go1
+  port: 8080
+  env: development
+
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: go1_db
+  max_conns: 20
+  min_conns: 5
+
+redis:
+  addr: localhost:6379
+
+kafka:
+  brokers: localhost:9099
+
+jaeger:
+  endpoint: localhost:4318
