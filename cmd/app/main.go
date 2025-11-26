@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"go1/config"
-	"go1/internal/server"
+	"go1/internal/api/server"
 	"go1/pkg/logger"
 )
 

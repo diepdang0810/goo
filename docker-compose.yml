@@ -5,15 +5,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        SERVICE: app
     container_name: go1_app
     ports:
       - "8080:8080"
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_NAME=go1_db
+      - APP_PORT=8080
+      - APP_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DBNAME=go1_db
       - REDIS_ADDR=redis:6379
       - KAFKA_BROKERS=kafka:29092
       - JAEGER_ENDPOINT=jaeger:4318
@@ -21,8 +25,35 @@ services:
       - postgres
       - redis
       - kafka
+      - jaeger
     volumes:
       - .:/app
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: worker
+    container_name: go1_worker
+    environment:
+      - APP_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DBNAME=go1_db
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:29092
+      - JAEGER_ENDPOINT=jaeger:4318
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - jaeger
+    volumes:
+      - .:/app
+
 
   postgres:
     image: postgres:15-alpine
