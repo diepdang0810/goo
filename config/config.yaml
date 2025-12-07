@@ -17,6 +17,18 @@ redis:
 
 kafka:
   brokers: localhost:9099
+  groupId: user-worker-group
+  retry:
+    retrySuffix: ".retry"
+    dlqSuffix: ".dlq"
+    topics:
+      user_created:
+        enableRetry: true
+        maxAttempts: 3
+        backoffMs: 2000
+      # Example: topic without retry
+      # order_created:
+      #   enableRetry: false
 
 jaeger:
   endpoint: localhost:4318

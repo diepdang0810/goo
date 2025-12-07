@@ -11,11 +11,11 @@ import (
 )
 
 type UserHandler struct {
-	usecase *usecase.UserUsecase
+	usecase usecase.UserUsecaseInterface
 }
 
-func NewUserHandler(usecase *usecase.UserUsecase) *UserHandler {
-	return &UserHandler{usecase: usecase}
+func NewUserHandler(uc usecase.UserUsecaseInterface) *UserHandler {
+	return &UserHandler{usecase: uc}
 }
 
 
@@ -65,6 +65,22 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 	}
 
 	response.Success(c, ToUserResponse(user))
+}
+
+func (h *UserHandler) DeleteByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := utils.ParseInt(idStr)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid ID")
+		return
+	}
+
+	if err := h.usecase.DeleteByID(c.Request.Context(), id); err != nil {
+		response.HandleError(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "User deleted successfully"})
 }
 
 

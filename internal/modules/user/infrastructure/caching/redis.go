@@ -49,3 +49,11 @@ func (c *redisUserCache) Set(ctx context.Context, user *domain.User) error {
 	}
 	return nil
 }
+
+func (c *redisUserCache) Delete(ctx context.Context, id int64) error {
+	key := fmt.Sprintf("user:%d", id)
+	if err := c.client.Client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("redisUserCache.Delete: %w", err)
+	}
+	return nil
+}

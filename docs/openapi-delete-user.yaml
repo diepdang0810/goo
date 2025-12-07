@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: User Management API
+  description: API for managing users
+  version: 1.0.0
+servers:
+  - url: http://localhost:3002
+    description: Development server
+
+paths:
+  /users/{id}:
+    delete:
+      summary: Delete user by ID
+      description: Deletes a user from the system by their unique identifier. This operation will also remove the user from cache.
+      operationId: deleteUserById
+      tags:
+        - Users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The unique identifier of the user to delete
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 200
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "User deleted successfully"
+              examples:
+                success:
+                  summary: Successful deletion
+                  value:
+                    code: 200
+                    data:
+                      message: "User deleted successfully"
+        '400':
+          description: Invalid ID format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 400
+                  error:
+                    type: string
+                    example: "Invalid ID"
+              examples:
+                invalidId:
+                  summary: Invalid ID parameter
+                  value:
+                    code: 400
+                    error: "Invalid ID"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 1002
+                  error:
+                    type: string
+                    example: "user not found"
+              examples:
+                notFound:
+                  summary: User does not exist
+                  value:
+                    code: 1002
+                    error: "user not found"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 500
+                  error:
+                    type: string
+                    example: "internal server error"
+              examples:
+                serverError:
+                  summary: Database or system error
+                  value:
+                    code: 500
+                    error: "internal server error"
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: Error code
+        error:
+          type: string
+          description: Error message
+    SuccessResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: Response code
+        data:
+          type: object
+          description: Response data

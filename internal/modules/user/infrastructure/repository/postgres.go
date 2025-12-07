@@ -9,15 +9,28 @@ import (
 	"go1/internal/modules/user/infrastructure/repository/postgres/model"
 	"go1/pkg/apperrors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PgxPoolIface defines the interface for pgx pool operations
+type PgxPoolIface interface {
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	Close()
+}
+
 type postgresUserRepository struct {
-	db *pgxpool.Pool
+	db PgxPoolIface
 }
 
 func NewPostgresUserRepository(db *pgxpool.Pool) domain.UserRepository {
+	return &postgresUserRepository{db: db}
+}
+
+func NewPostgresUserRepositoryWithInterface(db PgxPoolIface) domain.UserRepository {
 	return &postgresUserRepository{db: db}
 }
 
@@ -68,4 +81,18 @@ func (r *postgresUserRepository) Fetch(ctx context.Context) ([]domain.User, erro
 		users = append(users, *mapper.ToDomain(&m))
 	}
 	return users, nil
+}
+
+func (r *postgresUserRepository) DeleteByID(ctx context.Context, id int64) error {
+	query := `DELETE FROM users WHERE id = $1`
+	result, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("postgresUserRepository.DeleteByID: %w", err)
+	}
+	
+	if result.RowsAffected() == 0 {
+		return apperrors.ErrUserNotFound
+	}
+	
+	return nil
 }

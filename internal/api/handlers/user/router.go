@@ -10,5 +10,6 @@ func RegisterRoutes(r *gin.Engine, h *UserHandler) {
 		group.POST("", h.Create)
 		group.GET("", h.Fetch)
 		group.GET("/:id", h.GetByID)
+		group.DELETE("/:id", h.DeleteByID)
 	}
 }

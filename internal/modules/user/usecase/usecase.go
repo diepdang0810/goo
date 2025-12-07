@@ -72,6 +72,20 @@ func (u *UserUsecase) Fetch(ctx context.Context) ([]UserOutput, error) {
 	return outputs, nil
 }
 
+func (u *UserUsecase) DeleteByID(ctx context.Context, id int64) error {
+	// Delete from DB
+	if err := u.repo.DeleteByID(ctx, id); err != nil {
+		return err
+	}
+
+	// Delete from cache
+	if err := u.cache.Delete(ctx, id); err != nil {
+		logger.Log.Warn("Failed to delete cache", logger.Field{Key: "error", Value: err})
+	}
+
+	return nil
+}
+
 func (u *UserUsecase) toOutput(user *domain.User) *UserOutput {
 	return &UserOutput{
 		ID:        user.ID,

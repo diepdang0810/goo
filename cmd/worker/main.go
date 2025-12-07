@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	// Initialize logger
+	// Initialize logger with default settings until config is loaded
 	logger.SetLogger(logger.NewZapLogger("development"))
 
 	// Load config
@@ -21,13 +21,19 @@ func main() {
 		logger.Log.Fatal("Failed to load config", logger.Field{Key: "error", Value: err})
 	}
 
+	// Initialize worker application
+	app, err := worker.NewApp(cfg)
+	if err != nil {
+		logger.Log.Fatal("Failed to initialize worker app", logger.Field{Key: "error", Value: err})
+	}
+	defer app.Close()
+
 	// Create context that listens for the interrupt signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Create and run worker
-	w := worker.NewWorker(cfg)
-	if err := w.Run(ctx); err != nil && err != context.Canceled {
+	// Run worker
+	if err := app.Run(ctx); err != nil && err != context.Canceled {
 		logger.Log.Fatal("Worker failed", logger.Field{Key: "error", Value: err})
 	}
 

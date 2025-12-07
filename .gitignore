@@ -1,3 +1,6 @@
 tmp/
 .air.toml
 build/
+.agent
+.bmad
+.claude
