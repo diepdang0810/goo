@@ -215,6 +215,17 @@ Configuration is loaded via Viper from `config/config.yaml` and can be overridde
 
 Use `make migrate-create` to generate migration files in `migrations/`. The project uses golang-migrate with sequential naming (e.g., `000001_create_users_table.up.sql`).
 
+### CDC-Based Cache Synchronization
+
+The project uses Debezium for Change Data Capture to automatically sync PostgreSQL changes to Redis:
+
+1. **Architecture**: PostgreSQL (WAL) → Debezium → Kafka → Worker CDC Handler → Redis
+2. **Setup**: Run `./scripts/debezium/register-connector.sh` after `make up`
+3. **Monitoring**: Debezium API at http://localhost:8083 (Kafka Connect REST API)
+4. **Handler**: `internal/worker/handlers/user_cdc.go` processes CDC events from `dbserver1.public.users` topic
+
+For detailed CDC documentation, see `docs/CDC_REDIS_SYNC.md`.
+
 ## Tech Stack
 
 - **Go**: 1.24.0

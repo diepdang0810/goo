@@ -18,6 +18,15 @@ redis:
 kafka:
   brokers: localhost:9099
   groupId: user-worker-group
+  producer:
+    requiredAcks: all         # Options: all (most durable), local (leader only), none (fire and forget)
+    retryMax: 5               # Max retries for transient errors
+    compression: none         # Options: none, gzip, snappy, lz4, zstd
+    maxMessageBytes: 1000000  # 1MB max message size
+  consumer:
+    sessionTimeoutMs: 10000      # 10 seconds - Max time between heartbeats
+    heartbeatIntervalMs: 3000    # 3 seconds - Heartbeat frequency
+    maxProcessingTimeMs: 300000  # 5 minutes - Max time to process message batch
   retry:
     retrySuffix: ".retry"
     dlqSuffix: ".dlq"
@@ -26,8 +35,12 @@ kafka:
         enableRetry: true
         maxAttempts: 3
         backoffMs: 2000
-      # Example: topic without retry
-      # order_created:
+      test_retry:
+        enableRetry: true
+        maxAttempts: 3
+        backoffMs: 2000
+      # Example: topic without retry (test_success will use this)
+      # test_success:
       #   enableRetry: false
 
 jaeger:

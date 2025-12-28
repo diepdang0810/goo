@@ -58,6 +58,8 @@ func (f *KafkaConsumerFactory) BuildFromTopics(topicConfigs []InstantiatedTopicC
 			DLQTopicSuffix:   dlqSuffix,
 			TopicRetryConfig: topicRetryMap,
 		},
+		f.config.Kafka.Producer, // Producer config for retry/DLQ publishing
+		f.config.Kafka.Consumer, // Consumer config for session timeout, heartbeat, etc.
 	)
 	if err != nil {
 		return nil, nil, err

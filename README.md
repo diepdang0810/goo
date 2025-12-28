@@ -6,24 +6,28 @@ A modular Clean Architecture Golang project with integrated observability and ev
 
 - **Clean Architecture**: Separation of concerns with Domain, Application, Infrastructure, and Presentation layers
 - **Event-Driven**: Kafka integration for async messaging
-- **Caching**: Redis for performance optimization
-- **Observability**: 
+- **CDC-Based Caching**:
+  - Debezium Change Data Capture for automatic cache synchronization
+  - Redis cache-first read pattern with auto-invalidation
+  - Zero manual cache management
+- **Observability**:
   - Prometheus for metrics
   - Grafana for visualization
   - Jaeger for distributed tracing
   - OpenTelemetry instrumentation
 - **Middleware**: CORS, Authentication (bypass mode), Metrics, Tracing
 - **Error Handling**: Structured error responses with custom error codes
-- **Database**: PostgreSQL with migrations
+- **Database**: PostgreSQL with migrations and logical replication
 - **Development**: Hot reload with Air
 
 ## Tech Stack
 
 - **Go**: 1.25.4
 - **Web Framework**: Gin
-- **Database**: PostgreSQL 15
+- **Database**: PostgreSQL 15 (with CDC via logical replication)
 - **Caching**: Redis 7
 - **Message Queue**: Kafka (Confluent 7.3.1)
+- **CDC**: Debezium 2.5 (Kafka Connect + PostgreSQL connector)
 - **Observability**: Prometheus, Grafana, Jaeger, OpenTelemetry
 - **Config**: Viper
 - **Logging**: Zap
@@ -102,70 +106,200 @@ A modular Clean Architecture Golang project with integrated observability and ev
 - Docker & Docker Compose
 - Make (optional, but recommended)
 
-## Setup
+## Complete Setup & Running Guide
 
-1. **Clone the repository**
+### Step 1: Start Infrastructure
 
-2. **Start Infrastructure**
-   ```bash
-   make up
-   ```
-   This starts all services: Postgres, Redis, Kafka, Zookeeper, Prometheus, Grafana, and Jaeger.
-
-3. **Run Migrations**
-   ```bash
-   make migrate-up
-   ```
-
-4. **Create Kafka Topic** (for event publishing)
-   ```bash
-   docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 --create --topic user_created --partitions 1 --replication-factor 1
-   ```
-
-## Running the Application
-
-The project now has two services:
-1. **API Server** (`cmd/app`) - HTTP REST API
-2. **Worker** (`cmd/worker`) - Kafka message consumer
-
-### Development Mode (Hot Reload)
-
-**Run API server:**
-```bash
-make dev
-```
-
-**Run Worker** (in separate terminal):
-```bash
-go run cmd/worker/main.go
-```
-
-### Production Build
-
-**Build both services:**
-```bash
-go build -o bin/api ./cmd/app
-go build -o bin/worker ./cmd/worker
-```
-
-**Run:**
-```bash
-./bin/api     # Start API server
-./bin/worker  # Start worker (separate terminal)
-```
-
-### Docker Compose
-
-**Run all services (API + Worker + Infrastructure):**
 ```bash
 make up
 ```
 
-This starts:
-- API server (port 8080)
-- Worker (Kafka consumer)
-- Postgres, Redis, Kafka
-- Prometheus, Grafana, Jaeger
+This starts all required services:
+- PostgreSQL (port 5432) - with WAL logical replication
+- Redis (port 6379)
+- Kafka (port 9099)
+- Zookeeper (port 2181)
+- Debezium (port 8083) - CDC connector runtime (Kafka Connect API)
+- Kafka Console (port 8084) - Redpanda Console UI
+- Prometheus (port 9090)
+- Grafana (port 3000)
+- Jaeger (port 16686)
+
+**Verify services are running:**
+```bash
+docker ps
+```
+
+### Step 2: Run Database Migrations
+
+```bash
+make migrate-up
+```
+
+This creates the required database tables.
+
+### Step 2.5: Setup Debezium CDC (Optional but Recommended)
+
+**Register the Debezium connector for automatic cache synchronization:**
+
+```bash
+./scripts/debezium/register-connector.sh
+```
+
+This enables Change Data Capture (CDC) so any PostgreSQL changes automatically sync to Redis cache.
+
+**Verify connector status:**
+```bash
+./scripts/debezium/check-connector.sh
+```
+
+You should see `"state": "RUNNING"` in the output.
+
+📚 **For detailed CDC documentation**, see: [docs/CDC_REDIS_SYNC.md](docs/CDC_REDIS_SYNC.md)
+
+### Step 3: Start the Services
+
+You need **TWO terminals**:
+
+**Terminal 1 - Start API Server:**
+```bash
+make run
+# or with hot reload (recommended for development):
+make dev
+```
+
+Wait for the log:
+```
+✅ Connected to PostgreSQL
+✅ Connected to Redis
+✅ Connected to Kafka producer
+Server is running on :8080
+```
+
+**Terminal 2 - Start Worker:**
+```bash
+make run-worker
+```
+
+Wait for the log:
+```
+✅ Connected to PostgreSQL
+✅ Connected to Redis
+✅ Connected to Kafka producer
+Worker started
+```
+
+### Step 4: Test the Setup
+
+**Test API:**
+```bash
+curl http://localhost:8080/users
+```
+
+**Create a user (will publish event to Kafka):**
+```bash
+curl -X POST http://localhost:8080/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "age": 30
+  }'
+```
+
+**Check Worker logs** - you should see:
+```
+📥 Processing message
+  topic: user_created
+  ...
+✅ Message processed successfully
+```
+
+### Step 5: Monitor
+
+- **API Metrics**: http://localhost:8080/metrics
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Jaeger Tracing**: http://localhost:16686
+- **Kafka Console UI**: http://localhost:8084
+- **Debezium API**: http://localhost:8083 (Kafka Connect REST API)
+
+### Stopping
+
+**Stop services gracefully:**
+- Press `Ctrl+C` in Terminal 1 (API)
+- Press `Ctrl+C` in Terminal 2 (Worker)
+
+**Stop infrastructure:**
+```bash
+make down
+```
+
+## Running the Application
+
+The project has **two services** that need to be run separately:
+1. **API Server** (`cmd/app`) - HTTP REST API on port 8080
+2. **Worker** (`cmd/worker`) - Kafka message consumer
+
+### Quick Start (Recommended)
+
+**Terminal 1 - API Server:**
+```bash
+make run
+# or with hot reload:
+make dev
+```
+
+**Terminal 2 - Worker:**
+```bash
+make run-worker
+```
+
+The API will be available at: http://localhost:8080
+
+### Alternative Methods
+
+#### Method 1: Using Go directly
+
+**Terminal 1 - API Server:**
+```bash
+go run cmd/app/main.go
+```
+
+**Terminal 2 - Worker:**
+```bash
+go run cmd/worker/main.go
+```
+
+#### Method 2: Build and run binaries
+
+**Build both services:**
+```bash
+make build-all
+# or separately:
+make build        # builds bin/app
+make build-worker # builds bin/worker
+```
+
+**Run the binaries:**
+
+**Terminal 1:**
+```bash
+./bin/app
+```
+
+**Terminal 2:**
+```bash
+./bin/worker
+```
+
+### Important Notes
+
+- ⚠️ **Both services must run simultaneously** for full functionality
+- ⚠️ **Start infrastructure first** with `make up` before running services
+- ⚠️ **Run migrations** with `make migrate-up` before first use
+- ✅ API server logs will show on Terminal 1
+- ✅ Worker logs will show on Terminal 2
 
 ## Configuration
 
@@ -195,9 +329,10 @@ jaeger:
 ## API Endpoints
 
 ### User Management
-- `POST /users`: Create a user
+- `POST /users`: Create a user (auto-cached via CDC)
 - `GET /users`: List all users
-- `GET /users/:id`: Get user by ID (cached)
+- `GET /users/:id`: Get user by ID (cache-first with CDC auto-sync)
+- `DELETE /users/:id`: Delete user (auto-removed from cache via CDC)
 
 ### Observability
 - `GET /metrics`: Prometheus metrics endpoint
@@ -246,12 +381,28 @@ The project uses [Air](https://github.com/cosmtrek/air) for hot reloading in dev
 
 ### Make Commands
 ```bash
-make up          # Start all Docker services
-make down        # Stop all Docker services
-make dev         # Run with hot reload
-make build       # Build binary
-make migrate-up  # Run migrations
+# Infrastructure
+make up           # Start all Docker services (Postgres, Redis, Kafka, etc.)
+make down         # Stop all Docker services
+
+# API Server
+make run          # Run API server
+make dev          # Run API server with hot reload
+make build        # Build API binary (bin/app)
+
+# Worker
+make run-worker   # Run worker
+make build-worker # Build worker binary (bin/worker)
+
+# Build both
+make build-all    # Build both API and Worker binaries
+
+# Database
+make migrate-up   # Run migrations
 make migrate-down # Rollback migrations
+
+# Testing
+make test         # Run all tests
 ```
 
 ## Architecture Principles

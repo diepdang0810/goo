@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN workflow_id VARCHAR(255);

@@ -2,14 +2,12 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 
 	"go1/internal/modules/user/domain"
+	"go1/pkg/kafka"
 	"go1/pkg/logger"
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
-
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 type UserCreatedHandler struct {
@@ -26,25 +24,25 @@ func NewUserCreatedHandler(pg *postgres.Postgres, rds *redis.RedisClient) *UserC
 	}
 }
 
-func (h *UserCreatedHandler) Handle(ctx context.Context, record *kgo.Record) error {
-	var user domain.User
-	if err := json.Unmarshal(record.Value, &user); err != nil {
-		logger.Log.Error("Failed to unmarshal user", logger.Field{Key: "error", Value: err})
-		return err
-	}
+// Handle uses the new simplified API with auto-unmarshal
+func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
+	// Use HandleJSON helper - auto-unmarshal + auto-log!
+	return kafka.HandleJSON(func(ctx context.Context, user domain.User, meta *kafka.MessageMetadata) error {
+		// User is already unmarshaled! No json.Unmarshal needed!
 
-	logger.Log.Info("Processing user_created event",
-		logger.Field{Key: "user_id", Value: user.ID},
-		logger.Field{Key: "email", Value: user.Email},
-	)
+		logger.Log.Info("📧 Processing user_created event",
+			logger.Field{Key: "user_id", Value: user.ID},
+			logger.Field{Key: "email", Value: user.Email},
+			logger.Field{Key: "name", Value: user.Name})
 
-	// TODO: Add business logic here
-	// Example with database access:
-	// userRepo := repository.NewPostgresUserRepository(h.postgres)
-	// userCache := caching.NewRedisUserCache(h.redis)
-	// userUsecase := usecase.NewUserUsecase(userRepo, userCache, nil)
-	//
-	// Example: Send welcome email, create profile, sync to external service, etc.
+		// TODO: Add business logic here
+		// Example with database access:
+		// userRepo := repository.NewPostgresUserRepository(h.postgres)
+		// userCache := caching.NewRedisUserCache(h.redis)
+		// userUsecase := usecase.NewUserUsecase(userRepo, userCache, nil)
+		//
+		// Example: Send welcome email, create profile, sync to external service, etc.
 
-	return nil
+		return nil
+	})
 }

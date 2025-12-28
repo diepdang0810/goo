@@ -2,7 +2,6 @@ package message_queue
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 
 	"go1/internal/modules/user/domain"
@@ -18,9 +17,8 @@ func NewKafkaUserEvent(producer *kafka.KafkaProducer) domain.UserEvent {
 }
 
 func (k *kafkaUserEvent) PublishUserCreated(ctx context.Context, user *domain.User) error {
-	eventData, err := json.Marshal(user)
-	if err != nil {
-		return err
-	}
-	return k.producer.Publish(ctx, "user_created", []byte(strconv.FormatInt(user.ID, 10)), eventData)
+	// Publish struct directly - auto-marshaled to JSON!
+	// Use user ID as partition key for consistent routing
+	key := strconv.FormatInt(user.ID, 10)
+	return k.producer.Publish("user_created", user, key)
 }

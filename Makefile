@@ -1,10 +1,20 @@
-.PHONY: run build test up down migrate-create migrate-up
+.PHONY: run build test up down migrate-create migrate-up run-worker build-worker build-all
 
 run:
 	go run cmd/app/main.go
 
+run-worker:
+	go run cmd/worker/main.go
+
 build:
 	go build -o bin/app cmd/app/main.go
+
+build-worker:
+	go build -o bin/worker cmd/worker/main.go
+
+build-all:
+	go build -o bin/app cmd/app/main.go
+	go build -o bin/worker cmd/worker/main.go
 
 test:
 	go test -v ./...

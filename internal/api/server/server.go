@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"go1/config"
+	kafkaTestHandler "go1/internal/api/handlers/kafka_test"
+	shipmentHandler "go1/internal/api/handlers/shipment"
+	"go1/internal/modules/order"
 	"go1/internal/modules/user"
 	"go1/pkg/kafka"
 	"go1/pkg/logger"
@@ -20,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.temporal.io/sdk/client"
 )
 
 type App struct {
@@ -29,6 +33,7 @@ type App struct {
 	kafka          *kafka.KafkaProducer
 	config         *config.Config
 	tracerProvider *sdktrace.TracerProvider
+	temporalClient client.Client
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
@@ -49,7 +54,10 @@ func NewApp(cfg *config.Config) (*App, error) {
 	if err := app.initKafka(); err != nil {
 		return nil, err
 	}
-	
+	if err := app.initTemporal(); err != nil {
+		return nil, err
+	}
+
 	app.initHTTPServer()
 
 	return app, nil
@@ -99,11 +107,22 @@ func (a *App) initRedis() error {
 }
 
 func (a *App) initKafka() error {
-	kf, err := kafka.NewProducer(a.config.Kafka.Brokers)
+	kf, err := kafka.NewProducer(a.config.Kafka.Brokers, a.config.Kafka.Producer)
 	if err != nil {
 		return err
 	}
 	a.kafka = kf
+	return nil
+}
+
+func (a *App) initTemporal() error {
+	c, err := client.Dial(client.Options{
+		HostPort: "localhost:7233", // Should be from config
+	})
+	if err != nil {
+		return err
+	}
+	a.temporalClient = c
 	return nil
 }
 
@@ -126,6 +145,14 @@ func (a *App) initHTTPServer() {
 
 	// Initialize Modules
 	user.Init(router, a.postgres.Pool, a.redis, a.kafka)
+	order.Init(router, a.postgres.Pool, a.temporalClient)
+
+	shipmentH := shipmentHandler.NewShipmentHandler(a.kafka)
+	shipmentHandler.RegisterRoutes(router, shipmentH)
+
+	// Initialize Kafka Test Handler
+	kafkaTest := kafkaTestHandler.NewKafkaTestHandler(a.kafka)
+	kafkaTestHandler.RegisterRoutes(router, kafkaTest)
 
 	a.httpServer = &http.Server{
 		Addr:    ":" + a.config.App.Port,

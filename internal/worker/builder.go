@@ -2,18 +2,22 @@ package worker
 
 import (
 	"go1/config"
+	"go1/internal/modules/order/infrastructure/repository"
+	workerHandlers "go1/internal/worker/handlers"
 	"go1/pkg/kafka"
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
+
+	"go.temporal.io/sdk/client"
 )
 
 // HandlerFactory is a function that creates a handler with injected dependencies
-type HandlerFactory func(pg *postgres.Postgres, rds *redis.RedisClient) kafka.MessageHandler
+type HandlerFactory func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler
 
 // TopicConfig represents configuration for a single topic with handler factory
 type TopicConfig struct {
 	Name           string
-	HandlerFactory HandlerFactory // Factory to create handler with dependencies
+	HandlerFactory HandlerFactory    // Factory to create handler with dependencies
 	Retry          *TopicRetryConfig // nil means no retry
 }
 
@@ -32,10 +36,11 @@ type TopicRetryConfig struct {
 
 // WorkerBuilder helps build a worker with topics in a fluent way
 type WorkerBuilder struct {
-	config       *config.Config
-	topicConfigs []TopicConfig
-	postgres     *postgres.Postgres
-	redis        *redis.RedisClient
+	config         *config.Config
+	topicConfigs   []TopicConfig
+	postgres       *postgres.Postgres
+	redis          *redis.RedisClient
+	temporalClient client.Client
 }
 
 func NewWorkerBuilder(cfg *config.Config) *WorkerBuilder {
@@ -54,6 +59,12 @@ func (b *WorkerBuilder) WithPostgres(pg *postgres.Postgres) *WorkerBuilder {
 // WithRedis sets the Redis connection for the worker
 func (b *WorkerBuilder) WithRedis(rc *redis.RedisClient) *WorkerBuilder {
 	b.redis = rc
+	return b
+}
+
+// WithTemporal sets the Temporal client for the worker
+func (b *WorkerBuilder) WithTemporal(c client.Client) *WorkerBuilder {
+	b.temporalClient = c
 	return b
 }
 
@@ -81,7 +92,7 @@ func (b *WorkerBuilder) Build() (*Worker, error) {
 	// Instantiate handlers with injected dependencies
 	instantiatedConfigs := make([]InstantiatedTopicConfig, 0, len(b.topicConfigs))
 	for _, tc := range b.topicConfigs {
-		handler := tc.HandlerFactory(b.postgres, b.redis)
+		handler := tc.HandlerFactory(b.postgres, b.redis, b.temporalClient)
 		instantiatedConfigs = append(instantiatedConfigs, InstantiatedTopicConfig{
 			Name:    tc.Name,
 			Handler: handler,
@@ -102,4 +113,16 @@ func (b *WorkerBuilder) Build() (*Worker, error) {
 		postgres: b.postgres,
 		redis:    b.redis,
 	}, nil
+}
+
+func (b *WorkerBuilder) WithShipmentEvents() *WorkerBuilder {
+	b.topicConfigs = append(b.topicConfigs, TopicConfig{
+		Name: "shipment-events",
+		HandlerFactory: func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
+			repo := repository.NewPostgresOrderRepository(pg.Pool)
+			handler := workerHandlers.NewShipmentEventHandler(temporalClient, repo)
+			return handler.Handle
+		},
+	})
+	return b
 }

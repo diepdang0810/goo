@@ -10,7 +10,7 @@ import (
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
 
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/IBM/sarama"
 )
 
 type Worker struct {
@@ -42,13 +42,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	return w.consumer.Consume(ctx, w.routeMessage)
 }
 
-func (w *Worker) routeMessage(ctx context.Context, record *kgo.Record) error {
-	handler, ok := w.handlers[record.Topic]
+func (w *Worker) routeMessage(ctx context.Context, message *sarama.ConsumerMessage) error {
+	handler, ok := w.handlers[message.Topic]
 	if !ok {
-		logger.Log.Warn("No handler for topic", logger.Field{Key: "topic", Value: record.Topic})
+		logger.Log.Warn("No handler for topic", logger.Field{Key: "topic", Value: message.Topic})
 		return nil
 	}
-	return handler(ctx, record)
+	return handler(ctx, message)
 }
 
 // GetPostgres returns the PostgreSQL connection (can be nil if not initialized)

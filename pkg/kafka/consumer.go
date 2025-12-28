@@ -4,20 +4,24 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	appConfig "go1/config"
 	"go1/pkg/logger"
 
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/IBM/sarama"
 )
 
 type Consumer struct {
-	Client   *kgo.Client
-	opts     ConsumerOptions
-	producer *KafkaProducer
+	consumerGroup sarama.ConsumerGroup
+	opts          ConsumerOptions
+	producer      *KafkaProducer
+	topics        []string
+	ready         chan bool
 }
 
-type MessageHandler func(context.Context, *kgo.Record) error
+type MessageHandler func(context.Context, *sarama.ConsumerMessage) error
 
 // TopicRetryConfig defines retry behavior for a specific topic.
 type TopicRetryConfig struct {
@@ -38,19 +42,22 @@ type ConsumerOptions struct {
 }
 
 func NewConsumer(brokers, groupID string, topics []string) (*Consumer, error) {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(strings.Split(brokers, ",")...),
-		kgo.ConsumerGroup(groupID),
-		kgo.ConsumeTopics(topics...),
-	}
+	config := sarama.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Consumer.Offsets.Initial = sarama.OffsetNewest
+	config.Version = sarama.V2_6_0_0
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
 
-	client, err := kgo.NewClient(opts...)
+	brokerList := strings.Split(brokers, ",")
+	consumerGroup, err := sarama.NewConsumerGroup(brokerList, groupID, config)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Consumer{
-		Client: client,
+		consumerGroup: consumerGroup,
+		topics:        topics,
+		ready:         make(chan bool),
 		opts: ConsumerOptions{
 			GroupID:          groupID,
 			RetryTopicSuffix: ".retry",
@@ -60,19 +67,31 @@ func NewConsumer(brokers, groupID string, topics []string) (*Consumer, error) {
 	}, nil
 }
 
-func NewConsumerWithOptions(brokers string, topics []string, options ConsumerOptions) (*Consumer, error) {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(strings.Split(brokers, ",")...),
-		kgo.ConsumerGroup(options.GroupID),
-		kgo.ConsumeTopics(topics...),
+func NewConsumerWithOptions(brokers string, topics []string, options ConsumerOptions, producerConfig appConfig.KafkaProducerConfig, consumerConfig appConfig.KafkaConsumerConfig) (*Consumer, error) {
+	config := sarama.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Consumer.Offsets.Initial = sarama.OffsetNewest
+	config.Version = sarama.V2_6_0_0
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+
+	// Apply consumer config
+	if consumerConfig.SessionTimeoutMs > 0 {
+		config.Consumer.Group.Session.Timeout = time.Duration(consumerConfig.SessionTimeoutMs) * time.Millisecond
+	}
+	if consumerConfig.HeartbeatIntervalMs > 0 {
+		config.Consumer.Group.Heartbeat.Interval = time.Duration(consumerConfig.HeartbeatIntervalMs) * time.Millisecond
+	}
+	if consumerConfig.MaxProcessingTimeMs > 0 {
+		config.Consumer.MaxProcessingTime = time.Duration(consumerConfig.MaxProcessingTimeMs) * time.Millisecond
 	}
 
-	client, err := kgo.NewClient(opts...)
+	brokerList := strings.Split(brokers, ",")
+	consumerGroup, err := sarama.NewConsumerGroup(brokerList, options.GroupID, config)
 	if err != nil {
 		return nil, err
 	}
 
-	prod, err := NewProducer(brokers)
+	prod, err := NewProducer(brokers, producerConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -88,44 +107,61 @@ func NewConsumerWithOptions(brokers string, topics []string, options ConsumerOpt
 		options.TopicRetryConfig = make(map[string]TopicRetryConfig)
 	}
 
-	return &Consumer{Client: client, opts: options, producer: prod}, nil
+	return &Consumer{
+		consumerGroup: consumerGroup,
+		topics:        topics,
+		opts:          options,
+		producer:      prod,
+		ready:         make(chan bool),
+	}, nil
 }
 
 func (c *Consumer) Consume(ctx context.Context, handler MessageHandler) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			fetches := c.Client.PollFetches(ctx)
-			if fetches.IsClientClosed() {
-				return nil
-			}
+	consumerHandler := &consumerGroupHandler{
+		consumer: c,
+		handler:  handler,
+		ready:    make(chan bool),
+	}
 
-			fetches.EachError(func(topic string, partition int32, err error) {
-				logger.Log.Error("Fetch error",
-					logger.Field{Key: "topic", Value: topic},
-					logger.Field{Key: "partition", Value: partition},
-					logger.Field{Key: "error", Value: err})
-			})
-
-			fetches.EachRecord(func(record *kgo.Record) {
-				if err := handler(ctx, record); err != nil {
-					c.handleError(ctx, record, err)
-				}
-			})
+	// Start error handling goroutine
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for err := range c.consumerGroup.Errors() {
+			logger.Log.Error("Consumer group error", logger.Field{Key: "error", Value: err})
 		}
+	}()
+
+	// Consume runs in a loop to handle rebalancing
+	for {
+		// `Consume` should be called inside an infinite loop, when a
+		// server-side rebalance happens, the consumer session will need to be
+		// recreated to get the new claims
+		if err := c.consumerGroup.Consume(ctx, c.topics, consumerHandler); err != nil {
+			logger.Log.Error("Consumer group error", logger.Field{Key: "error", Value: err})
+			return err
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			wg.Wait()
+			return ctx.Err()
+		}
+
+		// Reset ready channel for next session
+		consumerHandler.ready = make(chan bool)
 	}
 }
 
-func (c *Consumer) handleError(ctx context.Context, record *kgo.Record, err error) {
+func (c *Consumer) handleError(ctx context.Context, message *sarama.ConsumerMessage, err error) {
 	// Get retry config for this topic
-	retryConfig, hasRetryConfig := c.opts.TopicRetryConfig[record.Topic]
+	retryConfig, hasRetryConfig := c.opts.TopicRetryConfig[message.Topic]
 
 	// Check if DLQ topic (never retry DLQ)
-	if strings.HasSuffix(record.Topic, c.opts.DLQTopicSuffix) {
+	if strings.HasSuffix(message.Topic, c.opts.DLQTopicSuffix) {
 		logger.Log.Warn("DLQ topic error, not retrying",
-			logger.Field{Key: "topic", Value: record.Topic},
+			logger.Field{Key: "topic", Value: message.Topic},
 			logger.Field{Key: "error", Value: err})
 		return
 	}
@@ -133,16 +169,16 @@ func (c *Consumer) handleError(ctx context.Context, record *kgo.Record, err erro
 	// If no retry config for this topic, just log
 	if !hasRetryConfig {
 		logger.Log.Warn("No retry config for topic",
-			logger.Field{Key: "topic", Value: record.Topic},
+			logger.Field{Key: "topic", Value: message.Topic},
 			logger.Field{Key: "error", Value: err})
 		return
 	}
 
-	attempts := getAttempts(record.Headers)
+	attempts := getAttempts(message.Headers)
 	attempts++
 
 	logger.Log.Error("Handler error",
-		logger.Field{Key: "topic", Value: record.Topic},
+		logger.Field{Key: "topic", Value: message.Topic},
 		logger.Field{Key: "attempt", Value: attempts},
 		logger.Field{Key: "maxAttempts", Value: retryConfig.MaxAttempts},
 		logger.Field{Key: "error", Value: err})
@@ -151,16 +187,15 @@ func (c *Consumer) handleError(ctx context.Context, record *kgo.Record, err erro
 		return
 	}
 
+	// Update headers with new attempt count
+	updatedHeaders := updateAttemptsHeader(message.Headers, attempts)
+
 	// If max attempts reached, send to DLQ
 	if attempts >= retryConfig.MaxAttempts {
-		dlqTopic := getBaseTopic(record.Topic, c.opts.RetryTopicSuffix) + c.opts.DLQTopicSuffix
-		headers := updateAttemptsHeader(record.Headers, attempts)
-		if err := c.producer.Client.ProduceSync(ctx, &kgo.Record{
-			Topic:   dlqTopic,
-			Key:     record.Key,
-			Value:   record.Value,
-			Headers: headers,
-		}).FirstErr(); err != nil {
+		dlqTopic := getBaseTopic(message.Topic, c.opts.RetryTopicSuffix) + c.opts.DLQTopicSuffix
+
+		// Publish to DLQ with all headers preserved (including x-attempt)
+		if err := c.producer.PublishWithHeaders(ctx, dlqTopic, message.Key, message.Value, updatedHeaders); err != nil {
 			logger.Log.Error("Failed to publish to DLQ",
 				logger.Field{Key: "dlqTopic", Value: dlqTopic},
 				logger.Field{Key: "error", Value: err})
@@ -181,15 +216,9 @@ func (c *Consumer) handleError(ctx context.Context, record *kgo.Record, err erro
 		}
 	}
 
-	// Send to retry topic
-	retryTopic := getBaseTopic(record.Topic, c.opts.RetryTopicSuffix) + c.opts.RetryTopicSuffix
-	headers := updateAttemptsHeader(record.Headers, attempts)
-	if err := c.producer.Client.ProduceSync(ctx, &kgo.Record{
-		Topic:   retryTopic,
-		Key:     record.Key,
-		Value:   record.Value,
-		Headers: headers,
-	}).FirstErr(); err != nil {
+	// Send to retry topic with all headers preserved (including x-attempt)
+	retryTopic := getBaseTopic(message.Topic, c.opts.RetryTopicSuffix) + c.opts.RetryTopicSuffix
+	if err := c.producer.PublishWithHeaders(ctx, retryTopic, message.Key, message.Value, updatedHeaders); err != nil {
 		logger.Log.Error("Failed to publish to retry topic",
 			logger.Field{Key: "retryTopic", Value: retryTopic},
 			logger.Field{Key: "error", Value: err})
@@ -201,12 +230,17 @@ func (c *Consumer) handleError(ctx context.Context, record *kgo.Record, err erro
 }
 
 func (c *Consumer) Close() {
-	if c.Client != nil {
-		c.Client.Close()
+	if c.consumerGroup != nil {
+		c.consumerGroup.Close()
 	}
 	if c.producer != nil {
 		c.producer.Close()
 	}
+}
+
+// Ready returns a channel that will be closed when the consumer is ready
+func (c *Consumer) Ready() <-chan bool {
+	return c.ready
 }
 
 // GetRetrySuffix returns the configured retry topic suffix
@@ -233,9 +267,9 @@ func getBaseTopic(topic, retrySuffix string) string {
 	return topic
 }
 
-func getAttempts(hdrs []kgo.RecordHeader) int {
+func getAttempts(hdrs []*sarama.RecordHeader) int {
 	for _, h := range hdrs {
-		if strings.EqualFold(h.Key, "x-attempt") {
+		if strings.EqualFold(string(h.Key), "x-attempt") {
 			if v, err := strconv.Atoi(string(h.Value)); err == nil {
 				return v
 			}
@@ -245,15 +279,77 @@ func getAttempts(hdrs []kgo.RecordHeader) int {
 	return 0
 }
 
-func updateAttemptsHeader(hdrs []kgo.RecordHeader, attempts int) []kgo.RecordHeader {
-	updated := make([]kgo.RecordHeader, 0, len(hdrs)+1)
+func updateAttemptsHeader(hdrs []*sarama.RecordHeader, attempts int) []sarama.RecordHeader {
+	updated := make([]sarama.RecordHeader, 0, len(hdrs)+1)
 	// Copy all headers except x-attempt
 	for _, h := range hdrs {
-		if !strings.EqualFold(h.Key, "x-attempt") {
-			updated = append(updated, h)
+		if !strings.EqualFold(string(h.Key), "x-attempt") {
+			updated = append(updated, *h)
 		}
 	}
 	// Add updated x-attempt header
-	updated = append(updated, kgo.RecordHeader{Key: "x-attempt", Value: []byte(strconv.Itoa(attempts))})
+	updated = append(updated, sarama.RecordHeader{
+		Key:   []byte("x-attempt"),
+		Value: []byte(strconv.Itoa(attempts)),
+	})
 	return updated
+}
+
+// consumerGroupHandler implements sarama.ConsumerGroupHandler
+type consumerGroupHandler struct {
+	consumer *Consumer
+	handler  MessageHandler
+	ready    chan bool
+}
+
+// Setup is run at the beginning of a new session, before ConsumeClaim
+func (h *consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
+	// Close ready channel to signal that consumer is ready
+	close(h.ready)
+	logger.Log.Info("Consumer group session setup completed")
+	return nil
+}
+
+// Cleanup is run at the end of a session, once all ConsumeClaim goroutines have exited
+func (h *consumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error {
+	logger.Log.Info("Consumer group session cleanup completed")
+	return nil
+}
+
+// ConsumeClaim must start a consumer loop of ConsumerGroupClaim's Messages().
+// NOTE: Do not move the code below to a goroutine.
+// The `ConsumeClaim` itself is called within a goroutine by sarama for each partition, see:
+// https://github.com/IBM/sarama/blob/main/consumer_group.go#L27-L29
+// This ensures each partition processes messages sequentially to maintain ordering.
+func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	logger.Log.Info("Starting to consume partition",
+		logger.Field{Key: "topic", Value: claim.Topic()},
+		logger.Field{Key: "partition", Value: claim.Partition()},
+		logger.Field{Key: "initialOffset", Value: claim.InitialOffset()})
+
+	for {
+		select {
+		case message, ok := <-claim.Messages():
+			if !ok {
+				logger.Log.Info("Message channel closed",
+					logger.Field{Key: "topic", Value: claim.Topic()},
+					logger.Field{Key: "partition", Value: claim.Partition()})
+				return nil
+			}
+
+			// Process message sequentially to maintain ordering within partition
+			if err := h.handler(session.Context(), message); err != nil {
+				h.consumer.handleError(session.Context(), message, err)
+			}
+
+			// Mark message as processed (commit offset)
+			session.MarkMessage(message, "")
+
+		case <-session.Context().Done():
+			logger.Log.Info("Session context cancelled, exiting consume loop",
+				logger.Field{Key: "topic", Value: claim.Topic()},
+				logger.Field{Key: "partition", Value: claim.Partition()})
+			return nil
+		}
+	}
 }

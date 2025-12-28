@@ -1,58 +1,55 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        SERVICE: app
-    container_name: go1_app
-    ports:
-      - "8080:8080"
-    environment:
-      - APP_PORT=8080
-      - APP_ENV=development
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DBNAME=go1_db
-      - REDIS_ADDR=redis:6379
-      - KAFKA_BROKERS=kafka:29092
-      - JAEGER_ENDPOINT=jaeger:4318
-    depends_on:
-      - postgres
-      - redis
-      - kafka
-      - jaeger
-    volumes:
-      - .:/app
+  # Commented out - run with `make run` and `make run-worker` instead
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     args:
+  #       SERVICE: app
+  #   container_name: go1_app
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - APP_PORT=8080
+  #     - APP_ENV=development
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5432
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #     - POSTGRES_DBNAME=go1_db
+  #     - REDIS_ADDR=redis:6379
+  #     - KAFKA_BROKERS=kafka:29092
+  #     - JAEGER_ENDPOINT=jaeger:4318
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - kafka
+  #     - jaeger
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        SERVICE: worker
-    container_name: go1_worker
-    environment:
-      - APP_ENV=development
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DBNAME=go1_db
-      - REDIS_ADDR=redis:6379
-      - KAFKA_BROKERS=kafka:29092
-      - JAEGER_ENDPOINT=jaeger:4318
-    depends_on:
-      - postgres
-      - redis
-      - kafka
-      - jaeger
-    volumes:
-      - .:/app
+  # worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     args:
+  #       SERVICE: worker
+  #   container_name: go1_worker
+  #   environment:
+  #     - APP_ENV=development
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5432
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #     - POSTGRES_DBNAME=go1_db
+  #     - REDIS_ADDR=redis:6379
+  #     - KAFKA_BROKERS=kafka:29092
+  #     - JAEGER_ENDPOINT=jaeger:4318
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - kafka
+  #     - jaeger
 
 
   postgres:
@@ -66,6 +63,10 @@ services:
       - POSTGRES_DB=go1_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
 
   redis:
     image: redis:7-alpine
@@ -98,15 +99,58 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  temporal:
+    image: temporalio/auto-setup:1.22.3
+    container_name: go1_temporal
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=postgres
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      - postgres
+
+  temporal-ui:
+    image: temporalio/ui:2.23.0
+    container_name: go1_temporal_ui
+    ports:
+      - "8088:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+
   console:
     image: docker.redpanda.com/redpandadata/console:latest
     container_name: go1_console
     ports:
-      - "8083:8080"
+      - "8084:8080"
     environment:
       - KAFKA_BROKERS=kafka:29092
     depends_on:
       - kafka
+
+  debezium:
+    image: debezium/connect:2.6
+    platform: linux/amd64
+    restart: always
+    container_name: go1_debezium
+    hostname: debezium
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      STATUS_STORAGE_TOPIC: connect_statuses
+      OFFSET_STORAGE_TOPIC: connect_offsets
 
   prometheus:
     image: prom/prometheus:latest

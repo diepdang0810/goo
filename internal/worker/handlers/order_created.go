@@ -9,7 +9,7 @@ import (
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
 
-	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/IBM/sarama"
 )
 
 type Order struct {
@@ -32,9 +32,9 @@ func NewOrderCreatedHandler(pg *postgres.Postgres, rds *redis.RedisClient) *Orde
 	}
 }
 
-func (h *OrderCreatedHandler) Handle(ctx context.Context, record *kgo.Record) error {
+func (h *OrderCreatedHandler) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
 	var order Order
-	if err := json.Unmarshal(record.Value, &order); err != nil {
+	if err := json.Unmarshal(message.Value, &order); err != nil {
 		// Validation error - không nên retry
 		logger.Log.Error("Invalid order JSON", logger.Field{Key: "error", Value: err})
 		return nil // Return nil để skip retry
@@ -64,14 +64,14 @@ func (h *OrderCreatedHandler) Handle(ctx context.Context, record *kgo.Record) er
 }
 
 // Example để test retry:
-func (h *OrderCreatedHandler) HandleWithRetry(ctx context.Context, record *kgo.Record) error {
+func (h *OrderCreatedHandler) HandleWithRetry(ctx context.Context, message *sarama.ConsumerMessage) error {
 	var order Order
-	if err := json.Unmarshal(record.Value, &order); err != nil {
+	if err := json.Unmarshal(message.Value, &order); err != nil {
 		return nil // Skip invalid JSON
 	}
 
 	// Simulate transient error để test retry mechanism
-	attempts := getAttemptFromHeaders(record.Headers)
+	attempts := getAttemptFromHeaders(message.Headers)
 	if attempts < 2 {
 		logger.Log.Warn("Simulating transient error",
 			logger.Field{Key: "attempt", Value: attempts})
@@ -85,9 +85,9 @@ func (h *OrderCreatedHandler) HandleWithRetry(ctx context.Context, record *kgo.R
 	return nil
 }
 
-func getAttemptFromHeaders(headers []kgo.RecordHeader) int {
+func getAttemptFromHeaders(headers []*sarama.RecordHeader) int {
 	for _, h := range headers {
-		if h.Key == "x-attempt" {
+		if string(h.Key) == "x-attempt" {
 			// Parse attempt number
 			return len(string(h.Value)) // Simple hack for demo
 		}
