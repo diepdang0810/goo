@@ -10,10 +10,8 @@ import (
 	"github.com/IBM/sarama"
 )
 
-// TypedMessageHandler is a handler that receives an already-unmarshaled message
 type TypedMessageHandler[T any] func(ctx context.Context, message T, metadata *MessageMetadata) error
 
-// MessageMetadata contains Kafka message metadata
 type MessageMetadata struct {
 	Topic     string
 	Partition int32
@@ -23,24 +21,16 @@ type MessageMetadata struct {
 	Timestamp int64
 }
 
-// HandleJSON creates a MessageHandler that automatically unmarshals JSON to your type T
-// Example:
-//   handler := kafka.HandleJSON(func(ctx context.Context, user User, meta *kafka.MessageMetadata) error {
-//       logger.Log.Info("Processing user", logger.Field{Key: "user_id", Value: user.ID})
-//       return nil
-//   })
 func HandleJSON[T any](typedHandler TypedMessageHandler[T]) MessageHandler {
 	return func(ctx context.Context, message *sarama.ConsumerMessage) error {
-		// Auto-unmarshal JSON to type T
 		var payload T
 		if err := json.Unmarshal(message.Value, &payload); err != nil {
-			logger.Log.Error("❌ Failed to unmarshal message",
+			logger.Log.Error("Failed to unmarshal message",
 				logger.Field{Key: "topic", Value: message.Topic},
 				logger.Field{Key: "partition", Value: message.Partition},
 				logger.Field{Key: "offset", Value: message.Offset},
 				logger.Field{Key: "error", Value: err},
 				logger.Field{Key: "raw_value", Value: string(message.Value)})
-			// Return nil to skip invalid JSON (don't retry bad data)
 			return nil
 		}
 
@@ -62,9 +52,8 @@ func HandleJSON[T any](typedHandler TypedMessageHandler[T]) MessageHandler {
 				break
 			}
 		}
-
 		// Auto-log incoming message
-		logger.Log.Info("📥 Processing message",
+		logger.Log.Info("Processing message",
 			logger.Field{Key: "topic", Value: metadata.Topic},
 			logger.Field{Key: "partition", Value: metadata.Partition},
 			logger.Field{Key: "offset", Value: metadata.Offset},
@@ -74,7 +63,7 @@ func HandleJSON[T any](typedHandler TypedMessageHandler[T]) MessageHandler {
 
 		// Call the typed handler with unmarshaled payload
 		if err := typedHandler(ctx, payload, metadata); err != nil {
-			logger.Log.Error("❌ Handler failed",
+			logger.Log.Error("Handler failed",
 				logger.Field{Key: "topic", Value: metadata.Topic},
 				logger.Field{Key: "error", Value: err})
 			return err

@@ -6,6 +6,7 @@ import (
 	"go1/internal/modules/order/domain"
 	"go1/internal/modules/order/domain/entity"
 	"go1/pkg/apperrors"
+	"go1/pkg/utils"
 
 	"go.temporal.io/sdk/client"
 )
@@ -43,26 +44,21 @@ func NewOrderService(
 	}
 }
 
-// resolveParticipants helper logic to determine customer/driver IDs based on user role
-func (s *orderService) resolveParticipants(role, authUserID, inputCustomerID, inputDriverID string) (customerID string, driverID string, err error) {
+func (s *orderService) resolveParticipants(role utils.UserRole, authUserID string, inputCustomerID string, inputDriverID string) (customerID string, driverID string, err error) {
 	switch role {
-	case "admin":
+	case utils.UserRoleAdmin:
 		if inputCustomerID == "" {
 			return "", "", fmt.Errorf("customer_id is required for admin")
 		}
-		// Admin explicitly matches specific driver if provided
 		return inputCustomerID, inputDriverID, nil
-	case "driver":
+	case utils.UserRoleDriver:
 		if inputCustomerID == "" {
 			return "", "", fmt.Errorf("customer_id is required when driver creates order")
 		}
-		// Driver creates for themselves
 		return inputCustomerID, authUserID, nil
-	case "customer":
-		// Customer creates for themselves
+	case utils.UserRoleCustomer:
 		return authUserID, "", nil
 	default:
-		// Default safe behavior: treat as customer
 		return authUserID, "", nil
 	}
 }

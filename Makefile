@@ -16,6 +16,12 @@ build-all:
 	go build -o bin/app cmd/app/main.go
 	go build -o bin/worker cmd/worker/main.go
 
+dev:
+	air
+
+dev-worker:
+	air -c .air.worker.toml
+
 test:
 	go test -v ./...
 
@@ -24,9 +30,6 @@ up:
 
 down:
 	docker-compose down
-
-dev:
-	air
 
 migrate-create:
 	@read -p "Enter migration name: " name; \

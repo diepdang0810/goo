@@ -130,7 +130,7 @@ func publishMessage(producer sarama.SyncProducer, topic, key string, message int
 func createOrder() (string, error) {
 	req := CreateOrderRequest{
 		ServiceID:     1,
-		ServiceType:   "transport",
+		ServiceType:   "RIDE-TAXI",
 		PaymentMethod: "cash",
 		CustomerID:    "cust_123",
 		Points: []OrderPointRequest{
@@ -149,7 +149,7 @@ func createOrder() (string, error) {
 		return "", err
 	}
 	reqObj.Header.Set("Content-Type", "application/json")
-	reqObj.Header.Set("x-user-id", "cust_123")
+	reqObj.Header.Set("X-User-Id", "cust_123")
 	reqObj.Header.Set("x-user-role", "customer")
 
 	client := &http.Client{}

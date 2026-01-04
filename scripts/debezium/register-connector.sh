@@ -15,7 +15,7 @@ echo "Registering Debezium PostgreSQL connector..."
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "users-connector",
+    "name": "orders-connector",
     "config": {
       "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
       "tasks.max": "1",
@@ -25,7 +25,7 @@ curl -X POST http://localhost:8083/connectors \
       "database.password": "postgres",
       "database.dbname": "go1_db",
       "database.server.name": "go1",
-      "table.include.list": "public.users",
+      "table.include.list": "public.orders",
       "topic.prefix": "dbserver1",
       "plugin.name": "pgoutput",
       "publication.autocreate.mode": "filtered",
@@ -38,7 +38,8 @@ curl -X POST http://localhost:8083/connectors \
       "transforms": "unwrap",
       "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
       "transforms.unwrap.drop.tombstones": "false",
-      "transforms.unwrap.delete.handling.mode": "rewrite"
+      "transforms.unwrap.delete.handling.mode": "rewrite",
+      "transforms.unwrap.add.fields": "op"
     }
   }'
 

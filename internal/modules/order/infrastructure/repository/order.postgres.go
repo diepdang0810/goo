@@ -10,6 +10,7 @@ import (
 	"go1/internal/modules/order/domain/entity"
 	"go1/internal/modules/order/infrastructure/repository/postgres/mapper"
 	"go1/internal/modules/order/infrastructure/repository/postgres/model"
+	"go1/pkg/utils"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -71,9 +72,9 @@ func (r *postgresOrderRepository) Create(ctx context.Context, order *entity.Ride
 		order.Service.Name,
 		order.CreatedAt,
 		order.UpdatedAt,
-		order.SubStatus,
-		order.PromotionCode,
-		order.FeeID,
+		utils.EmptyToNil(order.SubStatus),
+		utils.EmptyToNil(order.PromotionCode),
+		utils.EmptyToNil(order.FeeID),
 		order.HasInsurance,
 		order.OrderTime,
 		order.CompletedTime,
@@ -81,7 +82,7 @@ func (r *postgresOrderRepository) Create(ctx context.Context, order *entity.Ride
 		order.Platform,
 		order.IsSchedule,
 		order.NowOrder,
-		order.NowOrderCode,
+		utils.EmptyToNil(order.NowOrderCode),
 	).Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
 
 	if err != nil {
@@ -115,6 +116,8 @@ func (r *postgresOrderRepository) GetByID(ctx context.Context, id string) (*enti
 	FROM orders WHERE id = $1`
 
 	var m model.OrderModel
+	var subStatus, promotionCode, feeID, nowOrderCode *string
+
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&m.ID,
 		&m.CreatedBy,
@@ -127,9 +130,9 @@ func (r *postgresOrderRepository) GetByID(ctx context.Context, id string) (*enti
 		&m.ServiceName,
 		&m.CreatedAt,
 		&m.UpdatedAt,
-		&m.SubStatus,
-		&m.PromotionCode,
-		&m.FeeID,
+		&subStatus,
+		&promotionCode,
+		&feeID,
 		&m.HasInsurance,
 		&m.OrderTime,
 		&m.CompletedTime,
@@ -137,13 +140,26 @@ func (r *postgresOrderRepository) GetByID(ctx context.Context, id string) (*enti
 		&m.Platform,
 		&m.IsSchedule,
 		&m.NowOrder,
-		&m.NowOrderCode,
+		&nowOrderCode,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, errNotFound
 		}
 		return nil, fmt.Errorf("postgresOrderRepository.GetByID: %w", err)
+	}
+
+	if subStatus != nil {
+		m.SubStatus = *subStatus
+	}
+	if promotionCode != nil {
+		m.PromotionCode = *promotionCode
+	}
+	if feeID != nil {
+		m.FeeID = *feeID
+	}
+	if nowOrderCode != nil {
+		m.NowOrderCode = *nowOrderCode
 	}
 
 	return mapper.ToOrderDomain(&m), nil

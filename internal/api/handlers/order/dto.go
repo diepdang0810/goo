@@ -1,6 +1,10 @@
 package order
 
-import "time"
+import (
+	"fmt"
+	"go1/pkg/utils"
+	"time"
+)
 
 type CreateOrderRequest struct {
 	ServiceID     int32               `json:"service_id" binding:"required"`
@@ -9,6 +13,16 @@ type CreateOrderRequest struct {
 	Points        []OrderPointRequest `json:"points" binding:"required,dive"`
 	CustomerID    string              `json:"customer_id"`
 	DriverID      string              `json:"driver_id"`
+}
+
+func (r *CreateOrderRequest) Validate() error {
+	switch utils.ServiceType(r.ServiceType) {
+	case utils.ServiceTypeRideTaxi, utils.ServiceTypeRideHour, utils.ServiceTypeRideRoute,
+		utils.ServiceTypeRideTrip, utils.ServiceTypeRideShare, utils.ServiceTypeRideShuttle:
+		return nil
+	default:
+		return fmt.Errorf("invalid service_type: %s", r.ServiceType)
+	}
 }
 
 type OrderPointRequest struct {

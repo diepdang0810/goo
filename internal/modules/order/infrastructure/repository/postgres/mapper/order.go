@@ -38,4 +38,3 @@ func ToOrderDomain(m *model.OrderModel) *entity.RideOrderEntity {
 		UpdatedAt: m.UpdatedAt,
 	}
 }
-

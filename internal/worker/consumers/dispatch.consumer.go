@@ -2,12 +2,11 @@ package consumers
 
 import (
 	"context"
-	"encoding/json"
 
 	"go1/internal/modules/order/domain"
+	"go1/pkg/kafka"
 	"go1/pkg/logger"
 
-	"github.com/IBM/sarama"
 	"go.temporal.io/sdk/client"
 )
 
@@ -23,38 +22,31 @@ func NewDispatchConsumer(temporalClient client.Client, repo domain.OrderReposito
 	}
 }
 
-func (h *DispatchConsumer) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
-	var event struct {
-		OrderID        string `json:"order_id"`
-		DispatchStatus string `json:"dispatch_status"`
-	}
+type DispatchEvent struct {
+	OrderID        string `json:"order_id"`
+	DispatchStatus string `json:"dispatch_status"`
+}
 
-	if err := json.Unmarshal(message.Value, &event); err != nil {
-		logger.Log.Error("Failed to unmarshal dispatch event", logger.Field{Key: "error", Value: err})
+func (h *DispatchConsumer) Handle() kafka.MessageHandler {
+	return kafka.HandleJSON(func(ctx context.Context, event DispatchEvent, meta *kafka.MessageMetadata) error {
+		// Get Order to find WorkflowID
+		order, err := h.repo.GetByID(ctx, event.OrderID)
+		if err != nil {
+			logger.Log.Error("Failed to get order", logger.Field{Key: "error", Value: err})
+			return err
+		}
+
+		// Signal Temporal Workflow
+		workflowID := order.WorkflowID
+		runID := "" // Use empty runID to signal the latest run
+		signalName := "order-dispatched"
+
+		err = h.temporalClient.SignalWorkflow(ctx, workflowID, runID, signalName, event)
+		if err != nil {
+			logger.Log.Error("Failed to signal workflow", logger.Field{Key: "error", Value: err})
+			return err
+		}
+
 		return nil
-	}
-
-	logger.Log.Info("Processing dispatch event",
-		logger.Field{Key: "orderID", Value: event.OrderID},
-		logger.Field{Key: "dispatchStatus", Value: event.DispatchStatus})
-
-	// Get Order to find WorkflowID
-	order, err := h.repo.GetByID(ctx, event.OrderID)
-	if err != nil {
-		logger.Log.Error("Failed to get order", logger.Field{Key: "error", Value: err})
-		return err
-	}
-
-	// Signal Temporal Workflow
-	workflowID := order.WorkflowID
-	runID := "" // Use empty runID to signal the latest run
-	signalName := "order-dispatched"
-
-	err = h.temporalClient.SignalWorkflow(ctx, workflowID, runID, signalName, event)
-	if err != nil {
-		logger.Log.Error("Failed to signal workflow", logger.Field{Key: "error", Value: err})
-		return err
-	}
-
-	return nil
+	})
 }

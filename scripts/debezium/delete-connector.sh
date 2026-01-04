@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "Deleting users-connector..."
-curl -X DELETE http://localhost:8083/connectors/users-connector
+echo "Deleting orders-connector..."
+curl -X DELETE http://localhost:8083/connectors/orders-connector
 
 echo ""
 echo "Connector deleted!"

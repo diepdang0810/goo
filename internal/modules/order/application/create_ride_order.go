@@ -4,12 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"go1/internal/modules/order/domain"
 	"go1/internal/modules/order/domain/entity"
-	"go1/internal/modules/order/workflow"
-	"go1/internal/pkg/request"
-
-	"go.temporal.io/sdk/client"
+	"go1/pkg/request"
 )
 
 func (s *orderService) CreateRideOrder(ctx context.Context, input CreateRideOrderInput) (*OrderOutput, error) {
@@ -24,7 +20,7 @@ func (s *orderService) CreateRideOrder(ctx context.Context, input CreateRideOrde
 
 	order := entity.NewRideOrder(
 		userCtx.UserID,
-		userCtx.Role,
+		string(userCtx.Role),
 		entity.CustomerVO{ID: customerID},
 		entity.DriverVO{ID: driverID},
 	)
@@ -34,10 +30,7 @@ func (s *orderService) CreateRideOrder(ctx context.Context, input CreateRideOrde
 	}
 
 	// 2. Validate Business Rules/Policies
-	vCtx := domain.ValidationContext{
-		UserID: customerID,
-	}
-	if err := s.rideValidator.ValidateCreate(ctx, order, vCtx); err != nil {
+	if err := s.rideValidator.ValidateCreate(ctx, order); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
@@ -46,28 +39,8 @@ func (s *orderService) CreateRideOrder(ctx context.Context, input CreateRideOrde
 		return nil, err
 	}
 
-	// 4. Set WorkflowID and Save (Infrastructure)
-	workflowID := "order_" + order.ID
-	order.WorkflowID = workflowID
-
 	if err := s.repo.Create(ctx, order); err != nil {
 		return nil, err
-	}
-
-	// 5. Trigger Workflow
-	workflowOptions := client.StartWorkflowOptions{
-		ID:        workflowID,
-		TaskQueue: "ORDER_TASK_QUEUE",
-	}
-
-	_, err = s.temporalClient.ExecuteWorkflow(ctx, workflowOptions, workflow.CreateOrderWorkflow, order.ID)
-	if err != nil {
-		// Log error but don't fail the request? Or return error?
-		// Since Order is created, we probably want to return success but log failure to start workflow.
-		// Or failing is better so client retries?
-		// User said "success sẽ tạo workflow", implying strict dependency.
-		// Use fmt.Errorf to return error.
-		return nil, fmt.Errorf("failed to start workflow: %w", err)
 	}
 
 	return s.mapper.ToOrderOutput(order), nil

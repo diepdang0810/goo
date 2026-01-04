@@ -64,8 +64,10 @@ func NewRideOrder(
 	customer CustomerVO,
 	driver DriverVO,
 ) *RideOrderEntity {
+	orderID := ulid.Make().String()
 	order := &RideOrderEntity{
-		ID:          ulid.Make().String(),
+		ID:          orderID,
+		WorkflowID:  "order_" + orderID,
 		CreatedBy:   createdBy,
 		CreatorRole: creatorRole,
 		Customer:    customer,

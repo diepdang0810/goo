@@ -22,6 +22,11 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if err := req.Validate(); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
 	var points []application.OrderPointInput
 	for _, p := range req.Points {
 		points = append(points, application.OrderPointInput{

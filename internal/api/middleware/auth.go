@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"go1/internal/pkg/request"
+	"go1/pkg/request"
+	"go1/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
 
-// AuthMiddleware checks for x-user-id header
 func AuthMiddleware(bypass bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if bypass {
@@ -14,21 +14,20 @@ func AuthMiddleware(bypass bool) gin.HandlerFunc {
 			return
 		}
 
-		// Check x-user-id header
-		userID := c.GetHeader("x-user-id")
+		userID := c.GetHeader(string(utils.XUserIDHeader))
 		if userID == "" {
-			c.JSON(401, gin.H{"error": "Unauthorized: x-user-id required"})
+			c.JSON(401, gin.H{"error": "Unauthorized: X-User-Id required"})
 			c.Abort()
 			return
 		}
 
 		user := &request.UserContext{
-			UserID:   userID,
-			Audience: c.GetHeader("x-user-audience"),
-			Platform: c.GetHeader("x-platform"),
+			UserID:    userID,
+			Role:      utils.UserRole(c.GetHeader(string(utils.XUserAudienceHeader))),
+			Platform:  c.GetHeader(string(utils.XUserPlatformHeader)),
+			PartnerID: c.GetHeader(string(utils.XPartnerIDHeader)),
 		}
 
-		// Set context
 		ctx := request.WithUser(c.Request.Context(), user)
 		c.Request = c.Request.WithContext(ctx)
 

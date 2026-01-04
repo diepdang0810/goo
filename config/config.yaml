@@ -31,17 +31,24 @@ kafka:
     retrySuffix: ".retry"
     dlqSuffix: ".dlq"
     topics:
-      user_created:
+      dispatch-events:
         enableRetry: true
         maxAttempts: 3
         backoffMs: 2000
-      test_retry:
+      shipment-events:
         enableRetry: true
         maxAttempts: 3
+        backoffMs: 2000
+      dbserver1_public_orders:
+        enableRetry: true
+        maxAttempts: 2
         backoffMs: 2000
       # Example: topic without retry (test_success will use this)
       # test_success:
       #   enableRetry: false
-
+temporal:
+  hostPort: localhost:7233
+  namespace: default
+  taskQueue: ORDER_TASK_QUEUE
 jaeger:
   endpoint: localhost:4318

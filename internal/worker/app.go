@@ -5,8 +5,6 @@ import (
 
 	"go1/config"
 	"go1/internal/modules/order/infrastructure/repository"
-	"go1/internal/worker/consumers"
-	"go1/pkg/kafka"
 	"go1/pkg/logger"
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
@@ -90,7 +88,7 @@ func (a *App) initRedis() error {
 
 func (a *App) initTemporal() error {
 	c, err := client.Dial(client.Options{
-		HostPort: "localhost:7233", // Should be from config
+		HostPort: a.config.Temporal.HostPort,
 	})
 	if err != nil {
 		return err
@@ -100,7 +98,7 @@ func (a *App) initTemporal() error {
 }
 
 func (a *App) initTemporalWorker() error {
-	w := tWorker.New(a.temporalClient, "ORDER_TASK_QUEUE", tWorker.Options{})
+	w := tWorker.New(a.temporalClient, a.config.Temporal.TaskQueue, tWorker.Options{})
 
 	w.RegisterWorkflow(workflow.CreateOrderWorkflow)
 
@@ -114,18 +112,14 @@ func (a *App) initTemporalWorker() error {
 
 func (a *App) initWorker() error {
 	// Register handlers here with NEW simplified API (auto-unmarshal!)
+	// Note: Retry configuration for topics is automatically loaded by AddTopic
 	w, err := NewWorkerBuilder(a.config).
 		WithPostgres(a.postgres).
 		WithRedis(a.redis).
 		WithTemporal(a.temporalClient).
-		AddTopic("test_success", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return consumers.NewTestSuccessHandlerV2(pg, rds).Handle()
-		}).
-		AddTopic("test_retry", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return consumers.NewTestRetryHandlerV2(pg, rds).Handle()
-		}).
 		WithShipmentEvents().
 		WithDispatchEvents().
+		WithOrderEvents().
 		Build()
 
 	if err != nil {

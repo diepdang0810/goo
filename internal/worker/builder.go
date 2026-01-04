@@ -7,6 +7,7 @@ import (
 	"go1/pkg/kafka"
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
+	"strings"
 
 	"go.temporal.io/sdk/client"
 )
@@ -70,9 +71,15 @@ func (b *WorkerBuilder) WithTemporal(c client.Client) *WorkerBuilder {
 
 // AddTopic adds a topic to consume with a handler factory
 func (b *WorkerBuilder) AddTopic(name string, factory HandlerFactory) *WorkerBuilder {
-	// Get retry config from YAML if exists
 	var retryConfig *TopicRetryConfig
-	if topicCfg, exists := b.config.Kafka.Retry.Topics[name]; exists && topicCfg.EnableRetry {
+	topicCfg, exists := b.config.Kafka.Retry.Topics[name]
+	if !exists {
+		// Fallback for topics with dots (Viper issue): try replacing dots with underscores
+		sanitized := strings.ReplaceAll(name, ".", "_")
+		topicCfg, exists = b.config.Kafka.Retry.Topics[sanitized]
+	}
+
+	if exists && topicCfg.EnableRetry {
 		retryConfig = &TopicRetryConfig{
 			MaxAttempts: topicCfg.MaxAttempts,
 			Backoff:     topicCfg.BackoffMs,
@@ -116,25 +123,24 @@ func (b *WorkerBuilder) Build() (*Worker, error) {
 }
 
 func (b *WorkerBuilder) WithShipmentEvents() *WorkerBuilder {
-	b.topicConfigs = append(b.topicConfigs, TopicConfig{
-		Name: "shipment-events",
-		HandlerFactory: func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
-			repo := repository.NewPostgresOrderRepository(pg.Pool)
-			handler := consumers.NewShipmentConsumer(temporalClient, repo)
-			return handler.Handle
-		},
+	return b.AddTopic(b.config.Kafka.Topics.ShipmentEvents, func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
+		repo := repository.NewPostgresOrderRepository(pg.Pool)
+		handler := consumers.NewShipmentConsumer(temporalClient, repo)
+		return handler.Handle()
 	})
-	return b
 }
 
 func (b *WorkerBuilder) WithDispatchEvents() *WorkerBuilder {
-	b.topicConfigs = append(b.topicConfigs, TopicConfig{
-		Name: "dispatch-events",
-		HandlerFactory: func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
-			repo := repository.NewPostgresOrderRepository(pg.Pool)
-			handler := consumers.NewDispatchConsumer(temporalClient, repo)
-			return handler.Handle
-		},
+	return b.AddTopic(b.config.Kafka.Topics.DispatchEvents, func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
+		repo := repository.NewPostgresOrderRepository(pg.Pool)
+		handler := consumers.NewDispatchConsumer(temporalClient, repo)
+		return handler.Handle()
 	})
-	return b
+}
+
+func (b *WorkerBuilder) WithOrderEvents() *WorkerBuilder {
+	return b.AddTopic(b.config.Kafka.Topics.OrderEvents, func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
+		handler := consumers.NewOrderConsumer(temporalClient)
+		return handler.Handle()
+	})
 }

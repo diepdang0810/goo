@@ -1,16 +1,16 @@
 #!/bin/bash
 
 echo "=== Kafka Connect Status ==="
-curl -s http://localhost:8083/ | jq .
+curl -s http://localhost:8083/
 
 echo ""
 echo "=== Registered Connectors ==="
-curl -s http://localhost:8083/connectors | jq .
+curl -s http://localhost:8083/connectors
 
 echo ""
-echo "=== Users Connector Status ==="
-curl -s http://localhost:8083/connectors/users-connector/status | jq .
+echo "=== Orders Connector Status ==="
+curl -s http://localhost:8083/connectors/orders-connector/status
 
 echo ""
 echo "=== Connector Config ==="
-curl -s http://localhost:8083/connectors/users-connector | jq .
+curl -s http://localhost:8083/connectors/orders-connector
