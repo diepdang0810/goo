@@ -22,18 +22,18 @@ func main() {
 	}
 
 	// Initialize worker application
-	app, err := worker.NewApp(cfg)
+	w, err := worker.New(cfg)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize worker app", logger.Field{Key: "error", Value: err})
 	}
-	defer app.Close()
+	defer w.Close()
 
 	// Create context that listens for the interrupt signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Run worker
-	if err := app.Run(ctx); err != nil && err != context.Canceled {
+	if err := w.Run(ctx); err != nil && err != context.Canceled {
 		logger.Log.Fatal("Worker failed", logger.Field{Key: "error", Value: err})
 	}
 

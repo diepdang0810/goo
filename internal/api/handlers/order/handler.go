@@ -1,7 +1,7 @@
 package order
 
 import (
-	"go1/internal/modules/order/application"
+	"go1/internal/shared/order/application"
 	"go1/pkg/response"
 
 	"github.com/gin-gonic/gin"

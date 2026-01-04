@@ -18,12 +18,12 @@ func main() {
 	}
 	logger.Log.Info("Loaded Config", logger.Field{Key: "config", Value: cfg})
 
-	app, err := server.NewApp(cfg)
+	srv, err := server.New(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize app: %v", err)
+		log.Fatalf("Failed to initialize server: %v", err)
 	}
 
-	if err := app.Run(); err != nil {
-		log.Fatalf("Failed to run app: %v", err)
+	if err := srv.Run(); err != nil {
+		log.Fatalf("Failed to run server: %v", err)
 	}
 }

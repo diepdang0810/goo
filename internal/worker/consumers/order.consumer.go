@@ -3,8 +3,8 @@ package consumers
 import (
 	"context"
 
-	"go1/internal/modules/order/domain/entity"
-	"go1/internal/modules/order/workflow"
+	"go1/internal/shared/order/domain/entity"
+	"go1/internal/shared/order/workflow"
 	"go1/pkg/kafka"
 	"go1/pkg/logger"
 

@@ -18,7 +18,6 @@ type Consumer struct {
 	opts          ConsumerOptions
 	producer      *KafkaProducer
 	topics        []string
-	ready         chan bool
 }
 
 type MessageHandler func(context.Context, *sarama.ConsumerMessage) error
@@ -39,32 +38,6 @@ type ConsumerOptions struct {
 	DLQTopicSuffix string
 	// TopicRetryConfig maps topic names to their retry configs. If a topic is not in the map, retry is disabled.
 	TopicRetryConfig map[string]TopicRetryConfig
-}
-
-func NewConsumer(brokers, groupID string, topics []string) (*Consumer, error) {
-	config := sarama.NewConfig()
-	config.Consumer.Return.Errors = true
-	config.Consumer.Offsets.Initial = sarama.OffsetNewest
-	config.Version = sarama.V2_6_0_0
-	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
-
-	brokerList := strings.Split(brokers, ",")
-	consumerGroup, err := sarama.NewConsumerGroup(brokerList, groupID, config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Consumer{
-		consumerGroup: consumerGroup,
-		topics:        topics,
-		ready:         make(chan bool),
-		opts: ConsumerOptions{
-			GroupID:          groupID,
-			RetryTopicSuffix: ".retry",
-			DLQTopicSuffix:   ".dlq",
-			TopicRetryConfig: make(map[string]TopicRetryConfig),
-		},
-	}, nil
 }
 
 func NewConsumerWithOptions(brokers string, topics []string, options ConsumerOptions, producerConfig appConfig.KafkaProducerConfig, consumerConfig appConfig.KafkaConsumerConfig) (*Consumer, error) {
@@ -112,7 +85,6 @@ func NewConsumerWithOptions(brokers string, topics []string, options ConsumerOpt
 		topics:        topics,
 		opts:          options,
 		producer:      prod,
-		ready:         make(chan bool),
 	}, nil
 }
 
@@ -192,18 +164,7 @@ func (c *Consumer) handleError(ctx context.Context, message *sarama.ConsumerMess
 
 	// If max attempts reached, send to DLQ
 	if attempts >= retryConfig.MaxAttempts {
-		dlqTopic := getBaseTopic(message.Topic, c.opts.RetryTopicSuffix) + c.opts.DLQTopicSuffix
-
-		// Publish to DLQ with all headers preserved (including x-attempt)
-		if err := c.producer.PublishWithHeaders(ctx, dlqTopic, message.Key, message.Value, updatedHeaders); err != nil {
-			logger.Log.Error("Failed to publish to DLQ",
-				logger.Field{Key: "dlqTopic", Value: dlqTopic},
-				logger.Field{Key: "error", Value: err})
-		} else {
-			logger.Log.Info("Message sent to DLQ",
-				logger.Field{Key: "dlqTopic", Value: dlqTopic},
-				logger.Field{Key: "attempts", Value: attempts})
-		}
+		c.sendToDLQ(ctx, message, updatedHeaders, attempts)
 		return
 	}
 
@@ -216,9 +177,27 @@ func (c *Consumer) handleError(ctx context.Context, message *sarama.ConsumerMess
 		}
 	}
 
-	// Send to retry topic with all headers preserved (including x-attempt)
+	// Send to retry topic
+	c.sendToRetry(ctx, message, updatedHeaders, attempts)
+}
+
+func (c *Consumer) sendToDLQ(ctx context.Context, message *sarama.ConsumerMessage, headers []sarama.RecordHeader, attempts int) {
+	dlqTopic := getBaseTopic(message.Topic, c.opts.RetryTopicSuffix) + c.opts.DLQTopicSuffix
+
+	if err := c.producer.PublishWithHeaders(ctx, dlqTopic, message.Key, message.Value, headers); err != nil {
+		logger.Log.Error("Failed to publish to DLQ",
+			logger.Field{Key: "dlqTopic", Value: dlqTopic},
+			logger.Field{Key: "error", Value: err})
+	} else {
+		logger.Log.Info("Message sent to DLQ",
+			logger.Field{Key: "dlqTopic", Value: dlqTopic},
+			logger.Field{Key: "attempts", Value: attempts})
+	}
+}
+
+func (c *Consumer) sendToRetry(ctx context.Context, message *sarama.ConsumerMessage, headers []sarama.RecordHeader, attempts int) {
 	retryTopic := getBaseTopic(message.Topic, c.opts.RetryTopicSuffix) + c.opts.RetryTopicSuffix
-	if err := c.producer.PublishWithHeaders(ctx, retryTopic, message.Key, message.Value, updatedHeaders); err != nil {
+	if err := c.producer.PublishWithHeaders(ctx, retryTopic, message.Key, message.Value, headers); err != nil {
 		logger.Log.Error("Failed to publish to retry topic",
 			logger.Field{Key: "retryTopic", Value: retryTopic},
 			logger.Field{Key: "error", Value: err})
@@ -236,27 +215,6 @@ func (c *Consumer) Close() {
 	if c.producer != nil {
 		c.producer.Close()
 	}
-}
-
-// Ready returns a channel that will be closed when the consumer is ready
-func (c *Consumer) Ready() <-chan bool {
-	return c.ready
-}
-
-// GetRetrySuffix returns the configured retry topic suffix
-func (c *Consumer) GetRetrySuffix() string {
-	if c.opts.RetryTopicSuffix == "" {
-		return ".retry"
-	}
-	return c.opts.RetryTopicSuffix
-}
-
-// GetDLQSuffix returns the configured DLQ topic suffix
-func (c *Consumer) GetDLQSuffix() string {
-	if c.opts.DLQTopicSuffix == "" {
-		return ".dlq"
-	}
-	return c.opts.DLQTopicSuffix
 }
 
 // getBaseTopic removes retry suffix if present to get the original topic name

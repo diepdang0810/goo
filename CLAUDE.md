@@ -8,7 +8,7 @@ This is a Clean Architecture Go microservices project with event-driven capabili
 - **API Service** (`cmd/app`): REST API server using Gin
 - **Worker Service** (`cmd/worker`): Kafka consumer for async event processing
 
-Both services share business logic through the `internal/modules/` directory, which contains domain entities, use cases, and infrastructure implementations organized by module (currently `user`).
+Both services share business logic through the `internal/shared/` directory, which contains domain entities, use cases, and infrastructure implementations organized by module (currently `user`).
 
 ## Development Commands
 
@@ -58,7 +58,7 @@ make migrate-create
 make test
 
 # Run tests for a specific package
-go test -v ./internal/modules/user/...
+go test -v ./internal/shared/user/...
 
 # Run a single test
 go test -v ./path/to/package -run TestName
@@ -76,7 +76,7 @@ docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 --create --
 
 ### Clean Architecture Layers
 
-The project follows Clean Architecture with strict dependency rules. Each module in `internal/modules/` is organized into:
+The project follows Clean Architecture with strict dependency rules. Each module in `internal/shared/` is organized into:
 
 1. **Domain Layer** (`domain/`): Core business entities and interfaces
    - `entity.go`: Domain models (e.g., `User`)
@@ -107,7 +107,7 @@ The project follows Clean Architecture with strict dependency rules. Each module
 Each module has a `module.go` file that wires up dependencies:
 
 ```go
-// internal/modules/user/module.go
+// internal/shared/user/module.go
 func Init(router *gin.Engine, db *pgxpool.Pool, redisClient *redis.RedisClient, kafkaProducer *kafka.KafkaProducer) {
     repo := repository.NewPostgresUserRepository(db)
     cache := caching.NewRedisUserCache(redisClient)
@@ -195,7 +195,7 @@ Configuration is loaded via Viper from `config/config.yaml` and can be overridde
 
 ### Adding a New Module
 
-1. Create module directory: `internal/modules/{module_name}/`
+1. Create module directory: `internal/shared/{module_name}/`
 2. Define domain entities and interfaces in `domain/`
 3. Implement use cases in `usecase/`
 4. Implement infrastructure adapters in `infrastructure/`

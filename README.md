@@ -6,6 +6,7 @@ A modular Clean Architecture Golang project with integrated observability and ev
 
 - **Clean Architecture**: Separation of concerns with Domain, Application, Infrastructure, and Presentation layers
 - **Event-Driven**: Kafka integration for async messaging
+- **Workflow Engine**: Temporal for durable execution and distributed transactions (Saga Pattern)
 - **CDC-Based Caching**:
   - Debezium Change Data Capture for automatic cache synchronization
   - Redis cache-first read pattern with auto-invalidation
@@ -27,6 +28,7 @@ A modular Clean Architecture Golang project with integrated observability and ev
 - **Database**: PostgreSQL 15 (with CDC via logical replication)
 - **Caching**: Redis 7
 - **Message Queue**: Kafka (Confluent 7.3.1)
+- **Workflow Engine**: Temporal
 - **CDC**: Debezium 2.5 (Kafka Connect + PostgreSQL connector)
 - **Observability**: Prometheus, Grafana, Jaeger, OpenTelemetry
 - **Config**: Viper
@@ -61,7 +63,7 @@ A modular Clean Architecture Golang project with integrated observability and ev
 │   │   ├── worker.go           # Worker orchestration
 │   │   └── handlers            # Message handlers
 │   │       └── order_created.go # Order created event handler
-│   └── modules                  # Shared Business Logic
+│   └── shared                  # Shared Business Logic
 │       └── order               # Order Module (Clean Architecture)
 │           ├── application      # Application Layer
 │           │   ├── dto.go      # Input/Output DTOs
@@ -121,6 +123,8 @@ This starts all required services:
 - Zookeeper (port 2181)
 - Debezium (port 8083) - CDC connector runtime (Kafka Connect API)
 - Kafka Console (port 8084) - Redpanda Console UI
+- Temporal Server (port 7233)
+- Temporal UI (port 8088)
 - Prometheus (port 9090)
 - Grafana (port 3000)
 - Jaeger (port 16686)
@@ -223,6 +227,7 @@ curl -X POST http://localhost:8080/orders \
 - **Grafana**: http://localhost:3000 (admin/admin)
 - **Jaeger Tracing**: http://localhost:16686
 - **Kafka Console UI**: http://localhost:8084
+- **Temporal UI**: http://localhost:8088
 - **Debezium API**: http://localhost:8083 (Kafka Connect REST API)
 
 ### Stopping
@@ -242,90 +247,6 @@ The project has **two services** that need to be run separately:
 1. **API Server** (`cmd/app`) - HTTP REST API on port 8080
 2. **Worker** (`cmd/worker`) - Kafka message consumer
 
-### Quick Start (Recommended)
-
-**Terminal 1 - API Server:**
-```bash
-make run
-# or with hot reload:
-make dev
-```
-
-**Terminal 2 - Worker:**
-```bash
-make run-worker
-```
-
-The API will be available at: http://localhost:8080
-
-### Alternative Methods
-
-#### Method 1: Using Go directly
-
-**Terminal 1 - API Server:**
-```bash
-go run cmd/app/main.go
-```
-
-**Terminal 2 - Worker:**
-```bash
-go run cmd/worker/main.go
-```
-
-#### Method 2: Build and run binaries
-
-**Build both services:**
-```bash
-make build-all
-# or separately:
-make build        # builds bin/app
-make build-worker # builds bin/worker
-```
-
-**Run the binaries:**
-
-**Terminal 1:**
-```bash
-./bin/app
-```
-
-**Terminal 2:**
-```bash
-./bin/worker
-```
-
-### Important Notes
-
-- ⚠️ **Both services must run simultaneously** for full functionality
-- ⚠️ **Start infrastructure first** with `make up` before running services
-- ⚠️ **Run migrations** with `make migrate-up` before first use
-- ✅ API server logs will show on Terminal 1
-- ✅ Worker logs will show on Terminal 2
-
-## Configuration
-
-Configuration is managed via `config/config.yaml`. You can also override settings using environment variables (e.g., `APP_PORT=9090`).
-
-```yaml
-app:
-  name: go1
-  port: 8080
-  env: development
-
-postgres:
-  host: localhost
-  port: 5432
-  # ...
-
-redis:
-  addr: localhost:6379
-
-kafka:
-  brokers: localhost:9099
-
-jaeger:
-  endpoint: localhost:4318
-```
 
 ## API Endpoints
 
@@ -355,29 +276,6 @@ jaeger:
 - **URL**: http://localhost:8083
 - **Features**: View topics, messages, consumer groups
 
-## Error Handling
-
-The application uses structured error responses:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": 1001,
-    "message": "Email already exists"
-  }
-}
-```
-
-**Error Codes:**
-- `1001`: Resource not found
-- `1002`: Validation error
-
-## Development
-
-### Hot Reload
-The project uses [Air](https://github.com/cosmtrek/air) for hot reloading in development mode.
-
 ### Make Commands
 ```bash
 # Infrastructure
@@ -404,14 +302,6 @@ make migrate-down # Rollback migrations
 make test         # Run all tests
 ```
 
-## Architecture Principles
-
-1. **Dependency Inversion**: All layers depend on abstractions (interfaces) defined in the domain layer
-2. **Separation of Concerns**: Each layer has a single, well-defined responsibility
-3. **Decoupling**: Infrastructure details (DB, cache, messaging) are isolated from business logic
-4. **Testability**: Clear boundaries make unit testing straightforward
-5. **Service Separation**: API and Worker services share business logic through modules but deploy independently
-
 ## Service Architecture
 
 **API Service** (`internal/api/`)
@@ -421,11 +311,12 @@ make test         # Run all tests
 - OpenTelemetry tracing
 
 **Worker Service** (`internal/worker/`)
-- Kafka consumer
+- Kafka Manager (Consumers)
+- Temporal Worker (Workflows & Activities)
 - Event-driven processing
 - Shares domain logic with API
 
-**Shared Modules** (`internal/modules/`)
+**Shared Modules** (`internal/shared/`)
 - Business logic (application layer)
 - Domain entities and interfaces
 - Infrastructure implementations
