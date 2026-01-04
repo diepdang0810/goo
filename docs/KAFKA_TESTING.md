@@ -316,7 +316,7 @@ docker exec -it go1_kafka kafka-consumer-groups.sh \
 ```bash
 docker exec -it go1_kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --group user-worker-group \
+  --group order-worker-group \
   --describe
 ```
 
@@ -324,7 +324,7 @@ docker exec -it go1_kafka kafka-consumer-groups.sh \
 ```bash
 docker exec -it go1_kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --group user-worker-group \
+  --group order-worker-group \
   --topic test_retry \
   --reset-offsets \
   --to-earliest \

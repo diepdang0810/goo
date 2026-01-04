@@ -17,7 +17,7 @@
 **Trước (Phức tạp):**
 ```go
 // worker.go: 80+ dòng code phức tạp
-baseTopics := []string{"user_created"}
+baseTopics := []string{"order_created"}
 retrySuffix := config...
 topics := buildTopicsList()
 topicRetryMap := buildRetryConfig()
@@ -29,8 +29,8 @@ setupHandlers()
 ```go
 // cmd/worker/main.go: Chỉ 1 builder chain!
 w, _ := worker.NewWorkerBuilder(cfg).
-    AddTopic("user_created", handlers.NewUserCreatedHandler().Handle).
     AddTopic("order_created", handlers.NewOrderCreatedHandler().Handle).
+
     Build()
 ```
 
@@ -58,15 +58,12 @@ func (h *TopicHandler) Handle(ctx, record) error { ... }
 kafka:
   retry:
     topics:
-      user_created:
-        enableRetry: true
-        maxAttempts: 3
-        backoffMs: 2000
-      
       order_created:
         enableRetry: true
         maxAttempts: 5
         backoffMs: 3000
+      
+
 ```
 
 ## 🏗️ Kiến trúc mới

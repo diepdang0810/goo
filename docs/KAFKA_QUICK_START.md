@@ -29,7 +29,7 @@ All settings in `config/config.yaml`:
 ```yaml
 kafka:
   brokers: localhost:9099
-  groupId: user-worker-group
+  groupId: order-worker-group
   producer:
     requiredAcks: all         # all, local, none
     retryMax: 5
@@ -41,7 +41,7 @@ kafka:
     maxProcessingTimeMs: 300000  # 5 minutes
   retry:
     topics:
-      user_created:
+      order_created:
         enableRetry: true
         maxAttempts: 3
         backoffMs: 2000
@@ -55,8 +55,8 @@ See `docs/KAFKA_CONFIGURATION.md` for detailed tuning guide.
 
 ```go
 // Publish a struct - auto-marshals to JSON
-user := domain.User{ID: 1, Email: "test@example.com"}
-err := producer.Publish("user_created", user, "key-123")
+order := consumers.Order{ID: "ord_1", Amount: 100.0}
+err := producer.Publish("order_created", order, "ord_1")
 
 // Publish a string
 err := producer.Publish("logs", "Log message", "optional-key")
@@ -75,10 +75,9 @@ err := producer.Publish("raw_data", []byte("raw bytes"))
 ### Example Handler
 
 ```go
-func (k *kafkaUserEvent) PublishUserCreated(ctx context.Context, user *domain.User) error {
+func (k *kafkaOrderEvent) PublishOrderCreated(ctx context.Context, order *consumers.Order) error {
     // Simple! Just pass the struct
-    key := strconv.FormatInt(user.ID, 10)
-    return k.producer.Publish("user_created", user, key)
+    return k.producer.Publish("order_created", order, order.ID)
 }
 ```
 
@@ -87,13 +86,13 @@ func (k *kafkaUserEvent) PublishUserCreated(ctx context.Context, user *domain.Us
 ### Basic Usage
 
 ```go
-func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
-    return kafka.HandleJSON(func(ctx context.Context, user domain.User, meta *kafka.MessageMetadata) error {
-        // User is already unmarshaled! No boilerplate!
-        logger.Log.Info("Processing user", logger.Field{Key: "email", Value: user.Email})
+func (h *OrderCreatedHandler) Handle() kafka.MessageHandler {
+    return kafka.HandleJSON(func(ctx context.Context, order consumers.Order, meta *kafka.MessageMetadata) error {
+        // Order is already unmarshaled! No boilerplate!
+        logger.Log.Info("Processing order", logger.Field{Key: "order_id", Value: order.ID})
 
         // Your business logic here
-        return sendWelcomeEmail(user)
+        return processOrder(order)
     })
 }
 ```
@@ -141,8 +140,8 @@ func (h *OrderCreatedHandler) Handle() kafka.MessageHandler {
 w, err := NewWorkerBuilder(cfg).
     WithPostgres(pg).
     WithRedis(rds).
-    AddTopic("user_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kafka.MessageHandler {
-        return handlers.NewUserCreatedHandler(pg, rds).Handle()  // Call Handle()
+    AddTopic("order_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kafka.MessageHandler {
+        return consumers.NewOrderCreatedHandler(pg, rds).Handle()  // Call Handle()
     }).
     Build()
 ```
@@ -196,10 +195,10 @@ docker exec -it go1_kafka kafka-console-consumer.sh \
 
 ```
 📤 Message published
-  topic: user_created
+  topic: order_created
   partition: 0
   offset: 42
-  key: user_123
+  key: ord_123
   value_size: 245
 ```
 
@@ -207,14 +206,14 @@ docker exec -it go1_kafka kafka-console-consumer.sh \
 
 ```
 📥 Processing message
-  topic: user_created
+  topic: order_created
   partition: 0
   offset: 42
-  key: user_123
+  key: ord_123
   attempt: 0
 
 ✅ Message processed successfully
-  topic: user_created
+  topic: order_created
   offset: 42
 ```
 
@@ -222,11 +221,11 @@ docker exec -it go1_kafka kafka-console-consumer.sh \
 
 ```
 ❌ Handler failed
-  topic: user_created
+  topic: order_created
   error: database connection failed
 
 Message sent to retry topic
-  retryTopic: user_created.retry
+  retryTopic: order_created.retry
   attempts: 1
 ```
 
@@ -234,7 +233,7 @@ Message sent to retry topic
 
 ```
 Message sent to DLQ
-  dlqTopic: user_created.dlq
+  dlqTopic: order_created.dlq
   attempts: 4
 ```
 
@@ -288,7 +287,7 @@ docker exec -it go1_kafka kafka-consumer-groups.sh \
 ```bash
 docker exec -it go1_kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --group user-worker-group \
+  --group order-worker-group \
   --describe
 ```
 
@@ -305,7 +304,7 @@ ps aux | grep worker
 ```bash
 docker exec -it go1_kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --group user-worker-group \
+  --group order-worker-group \
   --describe
 ```
 

@@ -1,43 +1,46 @@
 package order
 
 import (
-	"net/http"
-
-	"go1/internal/modules/order/domain"
-	usecase "go1/internal/modules/order/usecase"
+	"go1/internal/modules/order/application"
 	"go1/pkg/response"
-	"go1/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
 
 type OrderHandler struct {
-	usecase usecase.OrderUsecaseInterface
+	service application.OrderService
 }
 
-func NewOrderHandler(uc usecase.OrderUsecaseInterface) *OrderHandler {
-	return &OrderHandler{usecase: uc}
+func NewOrderHandler(service application.OrderService) *OrderHandler {
+	return &OrderHandler{service: service}
 }
 
 func (h *OrderHandler) Create(c *gin.Context) {
 	var req CreateOrderRequest
-	// fmt.Println("CreateOrderRequest struct:", req) // Remove debug print or use logger
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.HandleBindingError(c, err)
 		return
 	}
 
-	input := usecase.CreateOrderInput{
-		UserID:       req.UserID,
-		Amount:       req.Amount,
-		Type:         domain.ServiceType(req.Type),
-		RestaurantID: req.RestaurantID,
-		Items:        req.Items,
-		Pickup:       req.Pickup,
-		Dropoff:      req.Dropoff,
+	var points []application.OrderPointInput
+	for _, p := range req.Points {
+		points = append(points, application.OrderPointInput{
+			Lat:     p.Lat,
+			Lng:     p.Lng,
+			Type:    p.Type,
+			Address: p.Address,
+			Phone:   p.Phone,
+		})
 	}
 
-	order, err := h.usecase.Create(c.Request.Context(), input)
+	input := application.CreateRideOrderInput{
+		ServiceID:     req.ServiceID,
+		ServiceType:   req.ServiceType,
+		PaymentMethod: req.PaymentMethod,
+		Points:        points,
+	}
+
+	order, err := h.service.CreateRideOrder(c.Request.Context(), input)
 	if err != nil {
 		response.HandleError(c, err)
 		return
@@ -48,13 +51,8 @@ func (h *OrderHandler) Create(c *gin.Context) {
 
 func (h *OrderHandler) GetByID(c *gin.Context) {
 	idStr := c.Param("id")
-	id, err := utils.ParseInt(idStr)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid ID")
-		return
-	}
 
-	order, err := h.usecase.GetByID(c.Request.Context(), id)
+	order, err := h.service.GetByID(c.Request.Context(), idStr)
 	if err != nil {
 		response.HandleError(c, err)
 		return

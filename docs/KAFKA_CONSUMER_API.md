@@ -96,36 +96,36 @@ type MessageMetadata struct {
 
 ## Usage Examples
 
-### 1. Simple Handler - User Created Event
+### 1. Simple Handler - Order Created Event
 
 **Before (Verbose):**
 ```go
-func (h *UserCreatedHandler) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
-    var user domain.User
-    if err := json.Unmarshal(message.Value, &user); err != nil {
+func (h *OrderCreatedHandler) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
+    var order consumers.Order
+    if err := json.Unmarshal(message.Value, &order); err != nil {
         logger.Log.Error("Failed to unmarshal", logger.Field{Key: "error", Value: err})
         return nil
     }
 
-    logger.Log.Info("Processing user_created",
-        logger.Field{Key: "user_id", Value: user.ID},
-        logger.Field{Key: "email", Value: user.Email})
+    logger.Log.Info("Processing order_created",
+        logger.Field{Key: "order_id", Value: order.ID},
+        logger.Field{Key: "amount", Value: order.Amount})
 
     // Business logic...
-    return sendWelcomeEmail(user)
+    return processOrder(order)
 }
 ```
 
 **After (Clean):**
 ```go
-func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
-    return kafka.HandleJSON(func(ctx context.Context, user domain.User, meta *kafka.MessageMetadata) error {
-        // User already unmarshaled! Auto-logged!
+func (h *OrderCreatedHandler) Handle() kafka.MessageHandler {
+    return kafka.HandleJSON(func(ctx context.Context, order consumers.Order, meta *kafka.MessageMetadata) error {
+        // Order already unmarshaled! Auto-logged!
 
-        logger.Log.Info("📧 Sending welcome email",
-            logger.Field{Key: "email", Value: user.Email})
+        logger.Log.Info("📦 Processing order",
+            logger.Field{Key: "order_id", Value: order.ID})
 
-        return sendWelcomeEmail(user)
+        return processOrder(order)
     })
 }
 ```
@@ -133,18 +133,18 @@ func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
 **Auto-logged output:**
 ```
 📥 Processing message
-  topic: user_created
+  topic: order_created
   partition: 0
   offset: 42
-  key: 123
+  key: ord_123
   attempt: 0
   headers_count: 0
 
-📧 Sending welcome email
-  email: user@example.com
+📦 Processing order
+  order_id: ord_123
 
 ✅ Message processed successfully
-  topic: user_created
+  topic: order_created
   offset: 42
 ```
 
@@ -255,7 +255,7 @@ AddTopic("user_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kaf
 
 ```
 ❌ Handler failed
-  topic: user_created
+  topic: order_created
   error: database connection failed
 ```
 
@@ -263,11 +263,11 @@ AddTopic("user_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kaf
 
 ## Comparison: Before vs After
 
-### Example: User Created Handler
+### Example: Order Created Handler
 
 **❌ Before (18 lines of boilerplate):**
 ```go
-func (h *UserCreatedHandler) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
+func (h *OrderCreatedHandler) Handle(ctx context.Context, message *sarama.ConsumerMessage) error {
     // Boilerplate 1: Extract metadata
     attempt := 0
     for _, h := range message.Headers {
@@ -277,20 +277,20 @@ func (h *UserCreatedHandler) Handle(ctx context.Context, message *sarama.Consume
     }
 
     // Boilerplate 2: Unmarshal
-    var user domain.User
-    if err := json.Unmarshal(message.Value, &user); err != nil {
+    var order consumers.Order
+    if err := json.Unmarshal(message.Value, &order); err != nil {
         logger.Log.Error("Failed to unmarshal", logger.Field{Key: "error", Value: err})
         return nil
     }
 
     // Boilerplate 3: Log entry
-    logger.Log.Info("Processing user",
+    logger.Log.Info("Processing order",
         logger.Field{Key: "topic", Value: message.Topic},
         logger.Field{Key: "partition", Value: message.Partition},
-        logger.Field{Key: "user_id", Value: user.ID})
+        logger.Field{Key: "order_id", Value: order.ID})
 
     // Finally... business logic (3 lines)
-    sendWelcomeEmail(user)
+    processOrder(order)
 
     // Boilerplate 4: Log exit
     logger.Log.Info("Done", ...)
@@ -301,10 +301,10 @@ func (h *UserCreatedHandler) Handle(ctx context.Context, message *sarama.Consume
 
 **✅ After (5 lines total!):**
 ```go
-func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
-    return kafka.HandleJSON(func(ctx context.Context, user domain.User, meta *kafka.MessageMetadata) error {
+func (h *OrderCreatedHandler) Handle() kafka.MessageHandler {
+    return kafka.HandleJSON(func(ctx context.Context, order consumers.Order, meta *kafka.MessageMetadata) error {
         // Just business logic!
-        return sendWelcomeEmail(user)
+        return processOrder(order)
     })
 }
 ```
@@ -428,37 +428,37 @@ Remove:
 
 ```go
 // Handler struct
-type UserCreatedHandler struct {
+type OrderCreatedHandler struct {
     postgres *postgres.Postgres
     redis    *redis.RedisClient
 }
 
 // Constructor
-func NewUserCreatedHandler(pg *postgres.Postgres, rds *redis.RedisClient) *UserCreatedHandler {
-    return &UserCreatedHandler{postgres: pg, redis: rds}
+func NewOrderCreatedHandler(pg *postgres.Postgres, rds *redis.RedisClient) *OrderCreatedHandler {
+    return &OrderCreatedHandler{postgres: pg, redis: rds}
 }
 
 // Handler method - returns MessageHandler
-func (h *UserCreatedHandler) Handle() kafka.MessageHandler {
+func (h *OrderCreatedHandler) Handle() kafka.MessageHandler {
     // Use HandleJSON for auto-unmarshal + auto-log
-    return kafka.HandleJSON(func(ctx context.Context, user domain.User, meta *kafka.MessageMetadata) error {
-        // User is already unmarshaled! No boilerplate!
+    return kafka.HandleJSON(func(ctx context.Context, order consumers.Order, meta *kafka.MessageMetadata) error {
+        // Order is already unmarshaled! No boilerplate!
 
-        logger.Log.Info("Processing new user",
-            logger.Field{Key: "user_id", Value: user.ID},
-            logger.Field{Key: "email", Value: user.Email})
+        logger.Log.Info("Processing new order",
+            logger.Field{Key: "order_id", Value: order.ID},
+            logger.Field{Key: "amount", Value: order.Amount})
 
         // Business logic with dependencies
-        userRepo := repository.NewUserRepository(h.postgres)
-        userCache := cache.NewUserCache(h.redis)
+        orderRepo := repository.NewOrderRepository(h.postgres)
+        orderCache := cache.NewOrderCache(h.redis)
 
-        // Example: Send welcome email
-        if err := h.sendWelcomeEmail(user); err != nil {
+        // Example: Process order
+        if err := h.processOrder(order); err != nil {
             return err  // Triggers retry/DLQ
         }
 
-        // Example: Cache user
-        userCache.Set(ctx, user)
+        // Example: Cache order
+        orderCache.Set(ctx, order)
 
         return nil  // Success!
     })
@@ -469,8 +469,8 @@ func (a *App) initWorker() error {
     w, err := NewWorkerBuilder(cfg).
         WithPostgres(postgres).
         WithRedis(redis).
-        AddTopic("user_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kafka.MessageHandler {
-            return handlers.NewUserCreatedHandler(pg, rds).Handle()  // Call Handle()
+        AddTopic("order_created", func(pg *postgres.Postgres, rds *redis.RedisClient) kafka.MessageHandler {
+            return consumers.NewOrderCreatedHandler(pg, rds).Handle()  // Call Handle()
         }).
         Build()
 

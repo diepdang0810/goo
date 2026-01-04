@@ -72,24 +72,23 @@ err := producer.Publish("user_events", message, userID)
   value_size: 45
 ```
 
-### 3. Real-world example - User Created Event
+### 3. Real-world example - Order Created Event
 
 ```go
 // In your service/usecase
-func (u *UserUsecase) CreateUser(ctx context.Context, dto *CreateUserDTO) error {
-    // Create user in database
-    user, err := u.repo.Create(ctx, dto)
+func (u *OrderUsecase) CreateOrder(ctx context.Context, dto *CreateOrderDTO) error {
+    // Create order in database
+    order, err := u.repo.Create(ctx, dto)
     if err != nil {
         return err
     }
 
     // Publish struct directly - auto-marshaled to JSON!
-    key := strconv.FormatInt(user.ID, 10)
-    if err := u.kafka.Publish("user_created", user, key); err != nil {
+    if err := u.kafka.Publish("order_created", order, order.ID); err != nil {
         // Error is already logged by producer
         // Don't fail the request, just log
-        logger.Log.Warn("Failed to publish user_created event",
-            logger.Field{Key: "user_id", Value: user.ID})
+        logger.Log.Warn("Failed to publish order_created event",
+            logger.Field{Key: "order_id", Value: order.ID})
     }
 
     return nil
@@ -99,10 +98,10 @@ func (u *UserUsecase) CreateUser(ctx context.Context, dto *CreateUserDTO) error 
 **Auto-logged output:**
 ```
 📤 Message published
-  topic: user_created
+  topic: order_created
   partition: 0
   offset: 523
-  key: 123
+  key: ord_123
   value_size: 156
 ```
 
@@ -163,13 +162,12 @@ if err != nil {
 
 ```go
 ctx := context.Background()
-eventData, err := json.Marshal(user)
+eventData, err := json.Marshal(order)
 if err != nil {
     return err
 }
-key := []byte(strconv.FormatInt(user.ID, 10))
 
-err = producer.Publish(ctx, "user_created", key, eventData)
+err = producer.Publish(ctx, "order_created", []byte(order.ID), eventData)
 
 // Manual logging
 if err != nil {
@@ -177,15 +175,14 @@ if err != nil {
         logger.Field{Key: "error", Value: err})
 } else {
     logger.Log.Info("Published",
-        logger.Field{Key: "topic", Value: "user_created"})
+        logger.Field{Key: "topic", Value: "order_created"})
 }
 ```
 
 ### ✅ New API (Super Simple)
 
 ```go
-key := strconv.FormatInt(user.ID, 10)
-err := producer.Publish("user_created", user, key)
+err := producer.Publish("order_created", order, order.ID)
 // Auto-marshaled to JSON + Auto-logged! 🎉
 ```
 

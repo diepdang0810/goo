@@ -33,31 +33,31 @@ This document describes how Change Data Capture (CDC) with Debezium is used to a
 
 ### 1. **Cache-First Read Pattern**
 
-When getting a user by ID (`GET /users/:id`):
+When getting an order by ID (`GET /orders/:id`):
 
 ```go
-// internal/modules/user/usecase/usecase.go
-func (u *UserUsecase) GetByID(ctx context.Context, id int64) (*UserOutput, error) {
+// internal/modules/order/usecase/usecase.go
+func (u *OrderUsecase) GetByID(ctx context.Context, id string) (*OrderOutput, error) {
     // 1. Try cache first
-    if user, err := u.cache.Get(ctx, id); err == nil {
-        return u.toOutput(user), nil  // ✅ Fast path - cache hit
+    if order, err := u.cache.Get(ctx, id); err == nil {
+        return u.toOutput(order), nil  // ✅ Fast path - cache hit
     }
 
     // 2. Fallback to DB on cache miss
-    user, err := u.repo.GetByID(ctx, id)
+    order, err := u.repo.GetByID(ctx, id)
     if err != nil {
         return nil, err
     }
 
     // 3. Populate cache for next time
-    u.cache.Set(ctx, user)
-    return u.toOutput(user), nil
+    u.cache.Set(ctx, order)
+    return u.toOutput(order), nil
 }
 ```
 
 ### 2. **Automatic Cache Sync via CDC**
 
-When user data changes in PostgreSQL:
+When order data changes in PostgreSQL:
 
 **INSERT/UPDATE:**
 ```
@@ -103,9 +103,9 @@ Register the PostgreSQL connector to capture changes from the `users` table:
 ./scripts/debezium/register-connector.sh
 ```
 
-This creates a connector named `users-connector` that:
-- Monitors the `public.users` table
-- Publishes changes to `dbserver1.public.users` Kafka topic
+This creates a connector named `orders-connector` that:
+- Monitors the `public.orders` table
+- Publishes changes to `dbserver1.public.orders` Kafka topic
 - Uses PostgreSQL's native `pgoutput` plugin
 - Transforms events with `ExtractNewRecordState` for simplified structure
 
@@ -118,7 +118,7 @@ This creates a connector named `users-connector` that:
 Expected output:
 ```json
 {
-  "name": "users-connector",
+  "name": "orders-connector",
   "connector": {
     "state": "RUNNING",
     "worker_id": "kafka-connect:8083"
@@ -144,88 +144,91 @@ go run cmd/worker/main.go
 You'll see logs like:
 ```
 Worker started groupId=go1_worker topicCount=4
-Subscribed to topics: [user_created dbserver1.public.users test_success test_retry ...]
+Subscribed to topics: [order_created dbserver1.public.orders test_success test_retry ...]
 ```
 
 ## Testing the CDC Flow
 
-### Test 1: Create User (INSERT)
+### Test 1: Create Order (INSERT)
 
 ```bash
-# Create a new user
-curl -X POST http://localhost:8080/users \
+# Create a new order
+curl -X POST http://localhost:8080/orders \
   -H "Content-Type: application/json" \
-  -d '{"name": "John Doe", "email": "john@example.com"}'
+  -d '{
+    "service_id": 1,
+    "service_type": "delivery",
+    "customer_id": "cust_123",
+    "points": [{"lat": 10.0, "lng": 106.0, "type": "pickup"}]
+  }'
 
-# Response: {"id": 1, "name": "John Doe", "email": "john@example.com", ...}
+# Response: {"id": "ord_1", "status": "new", ...}
 ```
 
 **What happens:**
-1. User inserted into PostgreSQL
+1. Order inserted into PostgreSQL
 2. Debezium captures INSERT event
-3. CDC handler caches user in Redis
-4. Worker logs: `🔄 CDC: User created/snapshot user_id=1`
-5. Worker logs: `✅ User cached successfully user_id=1`
+3. CDC handler caches order in Redis
+4. Worker logs: `🔄 CDC: Order created/snapshot order_id=ord_1`
+5. Worker logs: `✅ Order cached successfully order_id=ord_1`
 
 **Verify cache:**
 ```bash
 # Check Redis directly
 docker exec -it go1_redis redis-cli
-> GET user:1
-# Should return the cached user JSON
+> GET order:ord_1
+# Should return the cached order JSON
 ```
 
-**Get user (should hit cache):**
+**Get order (should hit cache):**
 ```bash
-curl http://localhost:8080/users/1
+curl http://localhost:8080/orders/ord_1
 ```
 
-Check API logs for: `User found in cache id=1` ✅
+Check API logs for: `Order found in cache id=ord_1` ✅
 
-### Test 2: Update User (UPDATE)
+### Test 2: Update Order (UPDATE)
 
 ```bash
-# First, create a user to get an ID
-curl -X POST http://localhost:8080/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Jane Doe", "email": "jane@example.com"}'
+# First, create an order to get an ID
+curl -X POST http://localhost:8080/orders ...
 
 # Update via database (simulating external change)
 docker exec -it go1_postgres psql -U postgres -d go1_db -c \
-  "UPDATE users SET name='Jane Smith' WHERE email='jane@example.com';"
+  "UPDATE orders SET status='completed' WHERE id='ord_1';"
 ```
 
 **What happens:**
 1. Database updated directly
 2. Debezium captures UPDATE event
 3. CDC handler updates Redis cache
-4. Worker logs: `🔄 CDC: User updated user_id=2`
-5. Worker logs: `✅ User cache updated successfully user_id=2`
+4. Worker logs: `🔄 CDC: Order updated order_id=ord_1`
+5. Worker logs: `✅ Order cache updated successfully order_id=ord_1`
 
 **Verify cache updated:**
 ```bash
-curl http://localhost:8080/users/2
-# Should show "Jane Smith" from cache
+curl http://localhost:8080/orders/ord_1
+# Should show "completed" from cache
 ```
 
-### Test 3: Delete User (DELETE)
+### Test 3: Delete Order (DELETE)
 
 ```bash
-# Delete a user
-curl -X DELETE http://localhost:8080/users/1
+# Delete an order
+curl -X DELETE http://localhost:8080/orders/ord_1
 ```
 
 **What happens:**
-1. User deleted from PostgreSQL
+1. Order deleted from PostgreSQL
 2. Debezium captures DELETE event
 3. CDC handler removes from Redis
-4. Worker logs: `🔄 CDC: User deleted user_id=1`
-5. Worker logs: `✅ User removed from cache successfully user_id=1`
+4. Worker logs: `🔄 CDC: Order deleted order_id=ord_1`
+5. Worker logs: `✅ Order removed from cache successfully order_id=ord_1`
 
 **Verify cache deleted:**
 ```bash
 docker exec -it go1_redis redis-cli
-> GET user:1
+> GET order:ord_1
 # Should return (nil)
 ```
 
@@ -248,8 +251,8 @@ curl http://localhost:8083/connectors/users-connector/status | jq .
 docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 # Should see:
-# - dbserver1.public.users (CDC events)
-# - user_created (application events)
+# - dbserver1.public.orders (CDC events)
+# - order_created (application events)
 ```
 
 ### Monitor CDC Events
@@ -258,7 +261,7 @@ docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 --list
 # Consume CDC events in real-time
 docker exec go1_kafka kafka-console-consumer \
   --bootstrap-server localhost:9092 \
-  --topic dbserver1.public.users \
+  --topic dbserver1.public.orders \
   --from-beginning
 ```
 
@@ -266,9 +269,9 @@ docker exec go1_kafka kafka-console-consumer \
 
 ```json
 {
-  "id": 1,
-  "name": "John Doe",
-  "email": "john@example.com",
+  "id": "ord_1",
+  "status": "new",
+  "service_id": 1,
   "created_at": "2025-12-27T10:00:00Z",
   "updated_at": "2025-12-27T10:00:00Z",
   "__op": "c",
@@ -291,10 +294,10 @@ Use the Kafka Connect REST API at http://localhost:8083:
 curl http://localhost:8083/connectors
 
 # Check connector status
-curl http://localhost:8083/connectors/users-connector/status
+curl http://localhost:8083/connectors/orders-connector/status
 
 # Get connector config
-curl http://localhost:8083/connectors/users-connector
+curl http://localhost:8083/connectors/orders-connector
 ```
 
 ### Check Redis Cache
@@ -303,14 +306,14 @@ curl http://localhost:8083/connectors/users-connector
 # Connect to Redis
 docker exec -it go1_redis redis-cli
 
-# List all user keys
-KEYS user:*
+# List all order keys
+KEYS order:*
 
-# Get specific user
-GET user:1
+# Get specific order
+GET order:ord_1
 
 # Check TTL (should be ~600 seconds = 10 minutes)
-TTL user:1
+TTL order:ord_1
 
 # Flush all cache (for testing)
 FLUSHALL
@@ -321,14 +324,14 @@ FLUSHALL
 The CDC handler logs all operations:
 
 ```
-🔄 CDC: User created/snapshot user_id=1 email=john@example.com
-✅ User cached successfully user_id=1
+🔄 CDC: Order created/snapshot order_id=ord_1
+✅ Order cached successfully order_id=ord_1
 
-🔄 CDC: User updated user_id=1 email=john@example.com
-✅ User cache updated successfully user_id=1
+🔄 CDC: Order updated order_id=ord_1
+✅ Order cache updated successfully order_id=ord_1
 
-🔄 CDC: User deleted user_id=1
-✅ User removed from cache successfully user_id=1
+🔄 CDC: Order deleted order_id=ord_1
+✅ Order removed from cache successfully order_id=ord_1
 ```
 
 ## Configuration
@@ -339,7 +342,7 @@ The connector is configured in `scripts/debezium/register-connector.sh`:
 
 ```json
 {
-  "name": "users-connector",
+  "name": "orders-connector",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "database.hostname": "postgres",
@@ -348,7 +351,7 @@ The connector is configured in `scripts/debezium/register-connector.sh`:
     "database.password": "postgres",
     "database.dbname": "go1_db",
     "database.server.name": "go1",
-    "table.include.list": "public.users",
+    "table.include.list": "public.orders",
     "topic.prefix": "dbserver1",
     "plugin.name": "pgoutput",
     "slot.name": "debezium_slot"
@@ -357,8 +360,8 @@ The connector is configured in `scripts/debezium/register-connector.sh`:
 ```
 
 **Key settings:**
-- `table.include.list`: Only monitor `public.users` table
-- `topic.prefix`: CDC events go to `dbserver1.public.users`
+- `table.include.list`: Only monitor `public.orders` table
+- `topic.prefix`: CDC events go to `dbserver1.public.orders`
 - `plugin.name`: Use PostgreSQL's native `pgoutput` (no extensions needed)
 - `slot.name`: Replication slot name (prevents WAL accumulation)
 
@@ -436,7 +439,7 @@ docker exec go1_kafka kafka-consumer-groups \
    ```bash
    docker exec go1_kafka kafka-console-consumer \
      --bootstrap-server localhost:9092 \
-     --topic dbserver1.public.users
+     --topic dbserver1.public.orders
    ```
 
 2. Check worker logs for errors:
@@ -479,7 +482,7 @@ docker-compose down -v
 
 ## Next Steps
 
-- [ ] Add CDC for other tables (orders, products, etc.)
+- [ ] Add CDC for other tables (users, products, etc.)
 - [ ] Implement cache warming on application startup
 - [ ] Add Prometheus metrics for CDC lag monitoring
 - [ ] Implement distributed cache with Redis Cluster

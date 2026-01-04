@@ -9,7 +9,7 @@ All Kafka producer and consumer settings are now centralized in `config/config.y
 ```yaml
 kafka:
   brokers: localhost:9099
-  groupId: user-worker-group
+  groupId: order-worker-group
 
   # Producer Configuration
   producer:
@@ -194,7 +194,7 @@ retry:
   retrySuffix: ".retry"  # Retry topic suffix
   dlqSuffix: ".dlq"      # Dead letter queue suffix
   topics:
-    user_created:          # Base topic name
+    order_created:          # Base topic name
       enableRetry: true    # Enable retry mechanism
       maxAttempts: 3       # Max retry attempts
       backoffMs: 2000      # 2 seconds between retries
@@ -264,7 +264,7 @@ kafka:
     maxProcessingTimeMs: 60000   # 1 minute max
   retry:
     topics:
-      user_created:
+      order_created:
         enableRetry: true
         maxAttempts: 2      # Quick retry
         backoffMs: 1000     # 1 second
@@ -289,14 +289,11 @@ kafka:
     maxProcessingTimeMs: 300000  # 5 minutes
   retry:
     topics:
-      user_created:
-        enableRetry: true
-        maxAttempts: 3
-        backoffMs: 2000
       order_created:
         enableRetry: true
         maxAttempts: 5           # More retries for critical events
         backoffMs: 5000          # Longer backoff
+
 ```
 
 ### High-Throughput Environment

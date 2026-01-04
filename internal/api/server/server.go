@@ -11,8 +11,9 @@ import (
 	"go1/config"
 	kafkaTestHandler "go1/internal/api/handlers/kafka_test"
 	shipmentHandler "go1/internal/api/handlers/shipment"
+	apiMiddleware "go1/internal/api/middleware"
 	"go1/internal/modules/order"
-	"go1/internal/modules/user"
+
 	"go1/pkg/kafka"
 	"go1/pkg/logger"
 	"go1/pkg/middleware"
@@ -138,13 +139,13 @@ func (a *App) initHTTPServer() {
 	router.Use(middleware.CORSMiddleware())
 	router.Use(middleware.MetricsMiddleware())
 	router.Use(middleware.TracingMiddleware(a.config.App.Name))
-	router.Use(middleware.AuthMiddleware(true)) // Bypass auth by default
+	router.Use(apiMiddleware.AuthMiddleware(false)) // Auth enabled
 
 	// Prometheus metrics endpoint
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Initialize Modules
-	user.Init(router, a.postgres.Pool, a.redis, a.kafka)
+	// user.Init(router, a.postgres.Pool, a.redis, a.kafka)
 	order.Init(router, a.postgres.Pool, a.temporalClient)
 
 	shipmentH := shipmentHandler.NewShipmentHandler(a.kafka)

@@ -5,7 +5,7 @@ import (
 
 	"go1/config"
 	"go1/internal/modules/order/infrastructure/repository"
-	"go1/internal/worker/handlers"
+	"go1/internal/worker/consumers"
 	"go1/pkg/kafka"
 	"go1/pkg/logger"
 	"go1/pkg/postgres"
@@ -118,19 +118,14 @@ func (a *App) initWorker() error {
 		WithPostgres(a.postgres).
 		WithRedis(a.redis).
 		WithTemporal(a.temporalClient).
-		AddTopic("user_created", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return handlers.NewUserCreatedHandler(pg, rds).Handle()
-		}).
-		AddTopic("dbserver1.public.users", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return handlers.NewUserCDCHandler(pg, rds).Handle()
-		}).
 		AddTopic("test_success", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return handlers.NewTestSuccessHandlerV2(pg, rds).Handle()
+			return consumers.NewTestSuccessHandlerV2(pg, rds).Handle()
 		}).
 		AddTopic("test_retry", func(pg *postgres.Postgres, rds *redis.RedisClient, tc client.Client) kafka.MessageHandler {
-			return handlers.NewTestRetryHandlerV2(pg, rds).Handle()
+			return consumers.NewTestRetryHandlerV2(pg, rds).Handle()
 		}).
 		WithShipmentEvents().
+		WithDispatchEvents().
 		Build()
 
 	if err != nil {

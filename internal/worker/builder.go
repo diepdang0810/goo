@@ -3,7 +3,7 @@ package worker
 import (
 	"go1/config"
 	"go1/internal/modules/order/infrastructure/repository"
-	workerHandlers "go1/internal/worker/handlers"
+	consumers "go1/internal/worker/consumers"
 	"go1/pkg/kafka"
 	"go1/pkg/postgres"
 	"go1/pkg/redis"
@@ -120,7 +120,19 @@ func (b *WorkerBuilder) WithShipmentEvents() *WorkerBuilder {
 		Name: "shipment-events",
 		HandlerFactory: func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
 			repo := repository.NewPostgresOrderRepository(pg.Pool)
-			handler := workerHandlers.NewShipmentEventHandler(temporalClient, repo)
+			handler := consumers.NewShipmentConsumer(temporalClient, repo)
+			return handler.Handle
+		},
+	})
+	return b
+}
+
+func (b *WorkerBuilder) WithDispatchEvents() *WorkerBuilder {
+	b.topicConfigs = append(b.topicConfigs, TopicConfig{
+		Name: "dispatch-events",
+		HandlerFactory: func(pg *postgres.Postgres, rds *redis.RedisClient, temporalClient client.Client) kafka.MessageHandler {
+			repo := repository.NewPostgresOrderRepository(pg.Pool)
+			handler := consumers.NewDispatchConsumer(temporalClient, repo)
 			return handler.Handle
 		},
 	})

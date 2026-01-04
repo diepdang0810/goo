@@ -53,16 +53,16 @@ A modular Clean Architecture Golang project with integrated observability and ev
 │   ├── api                      # API Service
 │   │   ├── server              # HTTP server setup & middleware
 │   │   └── handlers            # HTTP handlers (Presentation Layer)
-│   │       └── user
-│   │           ├── handler.go  # User HTTP handlers
+│   │       └── order
+│   │           ├── handler.go  # Order HTTP handlers
 │   │           ├── dto.go      # Request/Response DTOs
 │   │           └── router.go   # Route definitions
 │   ├── worker                   # Worker Service  
 │   │   ├── worker.go           # Worker orchestration
 │   │   └── handlers            # Message handlers
-│   │       └── user_created.go # User created event handler
+│   │       └── order_created.go # Order created event handler
 │   └── modules                  # Shared Business Logic
-│       └── user                # User Module (Clean Architecture)
+│       └── order               # Order Module (Clean Architecture)
 │           ├── application      # Application Layer
 │           │   ├── dto.go      # Input/Output DTOs
 │           │   └── usecase.go  # Business logic
@@ -193,24 +193,25 @@ Worker started
 
 **Test API:**
 ```bash
-curl http://localhost:8080/users
+curl http://localhost:8080/orders/ORDER_ID
 ```
 
-**Create a user (will publish event to Kafka):**
+**Create an order (will publish event to Kafka):**
 ```bash
-curl -X POST http://localhost:8080/users \
+curl -X POST http://localhost:8080/orders \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "John Doe",
-    "email": "john@example.com",
-    "age": 30
+    "service_id": 1,
+    "service_type": "delivery",
+    "customer_id": "cust_123",
+    "points": [{"lat": 10.0, "lng": 106.0, "type": "pickup"}]
   }'
 ```
 
 **Check Worker logs** - you should see:
 ```
 📥 Processing message
-  topic: user_created
+  topic: order_created
   ...
 ✅ Message processed successfully
 ```
@@ -328,11 +329,9 @@ jaeger:
 
 ## API Endpoints
 
-### User Management
-- `POST /users`: Create a user (auto-cached via CDC)
-- `GET /users`: List all users
-- `GET /users/:id`: Get user by ID (cache-first with CDC auto-sync)
-- `DELETE /users/:id`: Delete user (auto-removed from cache via CDC)
+### Order Management
+- `POST /orders`: Create an order
+- `GET /orders/:id`: Get order by ID
 
 ### Observability
 - `GET /metrics`: Prometheus metrics endpoint
@@ -371,8 +370,8 @@ The application uses structured error responses:
 ```
 
 **Error Codes:**
-- `1001`: Email already exists
-- `1002`: User not found
+- `1001`: Resource not found
+- `1002`: Validation error
 
 ## Development
 

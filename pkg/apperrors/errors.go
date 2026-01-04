@@ -26,8 +26,6 @@ const (
 	ErrCodeUserNotFound       = 1002
 )
 
-// Predefined Errors
-var (
-	ErrEmailAlreadyExists = NewAppError(ErrCodeEmailAlreadyExists, "Email already exists", http.StatusBadRequest)
-	ErrUserNotFound       = NewAppError(ErrCodeUserNotFound, "User not found", http.StatusNotFound)
-)
+func NewServiceDisabledError(message string) *AppError {
+	return NewAppError(http.StatusBadRequest, message, http.StatusBadRequest)
+}

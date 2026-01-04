@@ -3,37 +3,33 @@ package activity
 import (
 	"context"
 	"go1/internal/modules/order/domain"
-	"go1/pkg/service/payment"
 )
 
 type OrderActivities struct {
-	paymentService *payment.PaymentService
-	repo           domain.OrderRepository
+	repo domain.OrderRepository
 }
 
 func NewOrderActivities(repo domain.OrderRepository) *OrderActivities {
-	return &OrderActivities{
-		paymentService: payment.NewPaymentService(),
-		repo:           repo,
-	}
+	return &OrderActivities{repo: repo}
 }
 
-func (a *OrderActivities) GetPaymentMethod(ctx context.Context, userID int64) ([]payment.PaymentMethod, error) {
-	return a.paymentService.GetPaymentMethodByUserID(ctx, userID)
+func (a *OrderActivities) Pay(ctx context.Context, amount float64, methodID string) (bool, error) {
+	// TODO: Use real payment service
+	return true, nil
 }
 
-func (a *OrderActivities) Pay(ctx context.Context, amount float64, paymentMethodID string) (bool, error) {
-	return a.paymentService.Pay(ctx, amount, paymentMethodID)
-}
-
-func (a *OrderActivities) CreateOrder(ctx context.Context, order *domain.Order) (int64, error) {
-	err := a.repo.Create(ctx, order)
-	if err != nil {
-		return 0, err
-	}
-	return order.ID, nil
-}
-
-func (a *OrderActivities) UpdateOrderStatus(ctx context.Context, orderID int64, status string) error {
+func (a *OrderActivities) UpdateOrderStatus(ctx context.Context, orderID string, status string) error {
 	return a.repo.UpdateStatus(ctx, orderID, status)
+}
+
+func (a *OrderActivities) SetOrderDispatched(ctx context.Context, orderID string) error {
+	return a.repo.UpdateStatus(ctx, orderID, "DISPATCHED")
+}
+
+func (a *OrderActivities) SetOrderCompleted(ctx context.Context, orderID string) error {
+	return a.repo.UpdateStatus(ctx, orderID, "COMPLETED")
+}
+
+func (a *OrderActivities) SetOrderCancelled(ctx context.Context, orderID string) error {
+	return a.repo.UpdateStatus(ctx, orderID, "CANCELLED")
 }

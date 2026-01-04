@@ -3,23 +3,25 @@ package order
 import "time"
 
 type CreateOrderRequest struct {
-	UserID int64   `json:"user_id" binding:"required"`
-	Amount float64 `json:"amount" binding:"required,gt=0"`
-	Type   string  `json:"type" binding:"required"`
+	ServiceID     int32               `json:"service_id" binding:"required"`
+	ServiceType   string              `json:"service_type" binding:"required"`
+	PaymentMethod string              `json:"payment_method"`
+	Points        []OrderPointRequest `json:"points" binding:"required,dive"`
+	CustomerID    string              `json:"customer_id"`
+	DriverID      string              `json:"driver_id"`
+}
 
-	// Food specific
-	RestaurantID string   `json:"restaurant_id"`
-	Items        []string `json:"items"`
-
-	// Ride specific
-	Pickup  string `json:"pickup"`
-	Dropoff string `json:"dropoff"`
+type OrderPointRequest struct {
+	Lat     float64 `json:"lat" binding:"required"`
+	Lng     float64 `json:"lng" binding:"required"`
+	Type    string  `json:"type" binding:"required"` // 'pickup', 'dropoff'
+	Address string  `json:"address"`
+	Phone   string  `json:"phone"`
 }
 
 type OrderResponse struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	Amount    float64   `json:"amount"`
+	ID        string    `json:"id"`
+	CreatedBy string    `json:"created_by"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

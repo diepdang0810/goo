@@ -64,10 +64,16 @@ func HandleBindingError(c *gin.Context, err error) {
 
 func HandleError(c *gin.Context, err error) {
 	if appErr, ok := err.(*apperrors.AppError); ok {
-		Error(c, appErr.Status, appErr)
+		c.JSON(appErr.Status, Response{
+			Success: false,
+			Message: appErr.Message,
+		})
 		return
 	}
-	Error(c, http.StatusInternalServerError, err.Error())
+	c.JSON(http.StatusInternalServerError, Response{
+		Success: false,
+		Message: err.Error(),
+	})
 }
 
 func msgForTag(tag string) string {

@@ -37,7 +37,6 @@ Hệ thống Worker được thiết kế theo **Builder Pattern** với hỗ tr
 
 ```go
 w, err := worker.NewWorkerBuilder(cfg).
-    AddTopic("user_created", handlers.NewUserCreatedHandler().Handle).
     AddTopic("order_created", handlers.NewOrderCreatedHandler().Handle).
     AddTopic("payment_processed", handlers.NewPaymentHandler().Handle).
     Build()
@@ -52,20 +51,17 @@ Chỉ cần **1 dòng** để thêm topic mới! 🎉
 ```yaml
 kafka:
   brokers: localhost:9099
-  groupId: user-worker-group
+  groupId: order-worker-group
   retry:
     retrySuffix: ".retry"
     dlqSuffix: ".dlq"
     topics:
-      user_created:
-        enableRetry: true
-        maxAttempts: 3
-        backoffMs: 2000
-      
       order_created:
         enableRetry: true
         maxAttempts: 5
         backoffMs: 3000
+      
+
       
       # Topic không cần retry
       notification_sent:
@@ -155,9 +151,9 @@ x-attempt: 1  → topic.retry → x-attempt: 2 → topic.retry → x-attempt: 3 
 Với config như trên, hệ thống tự động tạo structure:
 
 ```
-user_created          ← Base topic
-user_created.retry    ← Retry topic (auto-created by consumer)
-user_created.dlq      ← Dead letter queue
+order_created          ← Base topic
+order_created.retry    ← Retry topic (auto-created by consumer)
+order_created.dlq      ← Dead letter queue
 
 order_created
 order_created.retry
@@ -181,7 +177,7 @@ go run cmd/worker/main.go
 ```bash
 # Base topics (tạo thủ công)
 docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 \
-  --create --topic user_created --partitions 3 --replication-factor 1
+  --create --topic order_created --partitions 3 --replication-factor 1
 
 # Retry & DLQ topics tự động được tạo khi có message
 ```
@@ -191,7 +187,7 @@ docker exec go1_kafka kafka-topics --bootstrap-server localhost:9092 \
 # Xem messages trong DLQ
 docker exec go1_kafka kafka-console-consumer \
   --bootstrap-server localhost:9092 \
-  --topic user_created.dlq \
+  --topic order_created.dlq \
   --from-beginning
 ```
 
@@ -264,7 +260,7 @@ func (h *Handler) Handle(ctx context.Context, record *kgo.Record) error {
 ```json
 {
   "level": "error",
-  "topic": "user_created",
+  "topic": "order_created",
   "attempt": 2,
   "maxAttempts": 3,
   "error": "..."
@@ -306,7 +302,7 @@ w.configureRetry()
 ```go
 // Chỉ cần 1 builder chain
 w, _ := worker.NewWorkerBuilder(cfg).
-    AddTopic("user_created", handler).
+    AddTopic("order_created", handler).
     Build()
 ```
 
