@@ -13,11 +13,13 @@ func (s *orderService) CreateRideOrder(ctx context.Context, input CreateRideOrde
 	if !ok {
 		return nil, fmt.Errorf("internal: user context missing")
 	}
+	fmt.Println("-->userCtx: ", userCtx.Role)
+	fmt.Println("-->input: ", input)
 	customerID, driverID, err := s.resolveParticipants(userCtx.Role, userCtx.UserID, input.CustomerID, input.DriverID)
+
 	if err != nil {
 		return nil, err
 	}
-
 	order := entity.NewRideOrder(
 		userCtx.UserID,
 		string(userCtx.Role),
@@ -71,5 +73,6 @@ func (s *orderService) enrichData(order *entity.RideOrderEntity, ctx context.Con
 	}
 
 	order.SetPoints(points)
+	//get pricing
 	return nil
 }

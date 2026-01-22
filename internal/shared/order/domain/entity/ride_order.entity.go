@@ -33,19 +33,6 @@ type RideOrderEntity struct {
 	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
-type OrderStatus string
-
-const (
-	Scheduling             OrderStatus = "SCHEDULING"
-	StatusFinding          OrderStatus = "FINDING"
-	StatusAssigned         OrderStatus = "ASSIGNED"
-	StatusInProcess        OrderStatus = "IN PROCESS"
-	StatusCompleted        OrderStatus = "COMPLETED"
-	StatusCancelled        OrderStatus = "CANCELLED"
-	WaitingForPayment      OrderStatus = "WAITING FOR PAYMENT"
-	PendingForConfirmation OrderStatus = "PENDING FOR CONFIRMATION"
-)
-
 func (o *RideOrderEntity) IsCreatedByAdmin() bool {
 	return o.CreatorRole == "admin"
 }
@@ -92,7 +79,18 @@ func (o *RideOrderEntity) Validate() error {
 	if len(o.Points) == 0 {
 		return &DomainError{Code: "INVALID_POINTS", Message: "at least one point is required"}
 	}
-	// Basic internal consistency checks
+	if o.Payment.Method == "" {
+		return &DomainError{Code: "INVALID_PAYMENT", Message: "payment method is required"}
+	}
+	if o.Service.ID == 0 {
+		return &DomainError{Code: "INVALID_SERVICE", Message: "service is required"}
+	}
+	if o.Driver.ID == "" {
+		return &DomainError{Code: "INVALID_DRIVER", Message: "driver is required"}
+	}
+	if o.Customer.ID == "" {
+		return &DomainError{Code: "INVALID_CUSTOMER", Message: "customer is required"}
+	}
 	return nil
 }
 
@@ -114,4 +112,16 @@ func (o *RideOrderEntity) SetCustomer(customer CustomerVO) {
 
 func (o *RideOrderEntity) SetDriver(driver DriverVO) {
 	o.Driver = driver
+}
+
+func (o *RideOrderEntity) GetPoints() []PointVO {
+	return o.Points
+}
+
+func (o *RideOrderEntity) GetPayment() PaymentVO {
+	return o.Payment
+}
+
+func (o *RideOrderEntity) GetService() ServiceVO {
+	return o.Service
 }

@@ -167,8 +167,6 @@ You need **TWO terminals**:
 
 **Terminal 1 - Start API Server:**
 ```bash
-make run
-# or with hot reload (recommended for development):
 make dev
 ```
 
@@ -182,7 +180,7 @@ Server is running on :8080
 
 **Terminal 2 - Start Worker:**
 ```bash
-make run-worker
+make dev-worker
 ```
 
 Wait for the log:
@@ -272,10 +270,6 @@ The project has **two services** that need to be run separately:
 - **URL**: http://localhost:16686
 - **Features**: Distributed tracing for all HTTP requests
 
-### Redpanda Console (Kafka UI)
-- **URL**: http://localhost:8083
-- **Features**: View topics, messages, consumer groups
-
 ### Make Commands
 ```bash
 # Infrastructure
@@ -288,7 +282,7 @@ make dev          # Run API server with hot reload
 make build        # Build API binary (bin/app)
 
 # Worker
-make run-worker   # Run worker
+make dev-worker   # Run worker
 make build-worker # Build worker binary (bin/worker)
 
 # Build both
@@ -297,9 +291,13 @@ make build-all    # Build both API and Worker binaries
 # Database
 make migrate-up   # Run migrations
 make migrate-down # Rollback migrations
+```
 
-# Testing
-make test         # Run all tests
+# Validating
+## Workflow Testing
+We have a script to test the full order workflow:
+```bash
+go run scripts/test_flow/main.go
 ```
 
 ## Service Architecture
@@ -317,7 +315,6 @@ make test         # Run all tests
 - Shares domain logic with API
 
 **Shared Modules** (`internal/shared/`)
-- Business logic (application layer)
-- Domain entities and interfaces
-- Infrastructure implementations
-- Used by both API and Worker
+- **Domain**: Entities, Value Objects, Repository Interfaces
+- **Application**: Use Cases, Validators
+- **Infrastructure**: Database Implementation, External Service Clients

@@ -16,3 +16,10 @@ func (v *rideOrderValidatorImpl) ValidateCreate(ctx context.Context, order *enti
 
 	return nil
 }
+
+func (v *rideOrderValidatorImpl) ValidatePoints(ctx context.Context, order *entity.RideOrderEntity) error {
+	if len(order.GetPoints()) == 0 {
+		return &entity.DomainError{Code: "INVALID_POINTS", Message: "at least one point is required"}
+	}
+	return nil
+}

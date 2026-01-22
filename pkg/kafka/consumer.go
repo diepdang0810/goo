@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	appConfig "go1/config"
@@ -96,10 +95,7 @@ func (c *Consumer) Consume(ctx context.Context, handler MessageHandler) error {
 	}
 
 	// Start error handling goroutine
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		for err := range c.consumerGroup.Errors() {
 			logger.Log.Error("Consumer group error", logger.Field{Key: "error", Value: err})
 		}
@@ -117,7 +113,6 @@ func (c *Consumer) Consume(ctx context.Context, handler MessageHandler) error {
 
 		// Check if context was cancelled
 		if ctx.Err() != nil {
-			wg.Wait()
 			return ctx.Err()
 		}
 

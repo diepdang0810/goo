@@ -3,8 +3,6 @@ package server
 import (
 	"net/http"
 
-	kafkaTestHandler "go1/internal/api/handlers/kafka_test"
-	shipmentHandler "go1/internal/api/handlers/shipment"
 	apiMiddleware "go1/internal/api/middleware"
 	"go1/internal/shared/order"
 
@@ -90,13 +88,6 @@ func (s *Server) initHTTPServer() {
 
 	// Initialize Modules
 	order.Init(router, s.postgres.Pool)
-
-	shipmentH := shipmentHandler.NewShipmentHandler(s.kafka)
-	shipmentHandler.RegisterRoutes(router, shipmentH)
-
-	// Initialize Kafka Test Handler
-	kafkaTest := kafkaTestHandler.NewKafkaTestHandler(s.kafka)
-	kafkaTestHandler.RegisterRoutes(router, kafkaTest)
 
 	s.httpServer = &http.Server{
 		Addr:    ":" + s.config.App.Port,

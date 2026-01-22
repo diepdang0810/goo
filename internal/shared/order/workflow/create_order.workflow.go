@@ -20,6 +20,7 @@ const (
 	EventDispatched
 	EventDelivered
 	EventCancelled
+	EventTimeout
 )
 
 // --- Workflow Entry Point ---
@@ -32,6 +33,7 @@ func CreateOrderWorkflow(ctx workflow.Context, orderID string) error {
 
 	// Phase 1: Finding Driver (Wait for Dispatch)
 	// Business Rule: Order can be cancelled while finding a driver.
+	// Business Rule: If no driver found within 1 minute, timeout and cancel.
 	logger.Info("Waiting for dispatch signal", "OrderID", orderID)
 	event, err := waitForDispatchOrCancel(ctx)
 	if err != nil {
@@ -41,6 +43,11 @@ func CreateOrderWorkflow(ctx workflow.Context, orderID string) error {
 
 	if event == EventCancelled {
 		logger.Info("Order cancelled during dispatch phase", "OrderID", orderID)
+		return processCancellation(ctx, orderID)
+	}
+
+	if event == EventTimeout {
+		logger.Info("Order timed out finding driver (1 min)", "OrderID", orderID)
 		return processCancellation(ctx, orderID)
 	}
 
@@ -100,6 +107,11 @@ func waitForDispatchOrCancel(ctx workflow.Context) (WorkflowEvent, error) {
 	selector.AddReceive(workflow.GetSignalChannel(ctx, "order-canceled"), func(c workflow.ReceiveChannel, more bool) {
 		c.Receive(ctx, &cancelSignal)
 		event = EventCancelled
+	})
+
+	// Add 1 minute timeout
+	selector.AddFuture(workflow.NewTimer(ctx, 1*time.Minute), func(f workflow.Future) {
+		event = EventTimeout
 	})
 
 	selector.Select(ctx)

@@ -1,6 +1,7 @@
 package order
 
 import (
+	"fmt"
 	"go1/internal/shared/order/application"
 	"go1/pkg/response"
 
@@ -43,8 +44,10 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		ServiceType:   req.ServiceType,
 		PaymentMethod: req.PaymentMethod,
 		Points:        points,
+		CustomerID:    req.CustomerID,
+		DriverID:      req.DriverID,
 	}
-
+	fmt.Println("-->input: ", input)
 	order, err := h.service.CreateRideOrder(c.Request.Context(), input)
 	if err != nil {
 		response.HandleError(c, err)

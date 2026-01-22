@@ -133,6 +133,7 @@ func createOrder() (string, error) {
 		ServiceType:   "RIDE-TAXI",
 		PaymentMethod: "cash",
 		CustomerID:    "cust_123",
+		DriverID:      "driver_123",
 		Points: []OrderPointRequest{
 			{Lat: 10.7769, Lng: 106.7009, Type: "pickup", Address: "SGN", Phone: "0909000000"},
 			{Lat: 10.8231, Lng: 106.6297, Type: "dropoff", Address: "Home", Phone: "0909000000"},
@@ -150,7 +151,7 @@ func createOrder() (string, error) {
 	}
 	reqObj.Header.Set("Content-Type", "application/json")
 	reqObj.Header.Set("X-User-Id", "cust_123")
-	reqObj.Header.Set("x-user-role", "customer")
+	reqObj.Header.Set("X-User-Audience", "admin_portal")
 
 	client := &http.Client{}
 	resp, err := client.Do(reqObj)
