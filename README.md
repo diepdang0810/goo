@@ -170,55 +170,13 @@ You need **TWO terminals**:
 make dev
 ```
 
-Wait for the log:
-```
-✅ Connected to PostgreSQL
-✅ Connected to Redis
-✅ Connected to Kafka producer
-Server is running on :8080
-```
-
 **Terminal 2 - Start Worker:**
 ```bash
 make dev-worker
 ```
 
-Wait for the log:
-```
-✅ Connected to PostgreSQL
-✅ Connected to Redis
-✅ Connected to Kafka producer
-Worker started
-```
 
-### Step 4: Test the Setup
-
-**Test API:**
-```bash
-curl http://localhost:8080/orders/ORDER_ID
-```
-
-**Create an order (will publish event to Kafka):**
-```bash
-curl -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "service_id": 1,
-    "service_type": "delivery",
-    "customer_id": "cust_123",
-    "points": [{"lat": 10.0, "lng": 106.0, "type": "pickup"}]
-  }'
-```
-
-**Check Worker logs** - you should see:
-```
-📥 Processing message
-  topic: order_created
-  ...
-✅ Message processed successfully
-```
-
-### Step 5: Monitor
+### Step 4: Monitor
 
 - **API Metrics**: http://localhost:8080/metrics
 - **Prometheus**: http://localhost:9090
@@ -227,24 +185,6 @@ curl -X POST http://localhost:8080/orders \
 - **Kafka Console UI**: http://localhost:8084
 - **Temporal UI**: http://localhost:8088
 - **Debezium API**: http://localhost:8083 (Kafka Connect REST API)
-
-### Stopping
-
-**Stop services gracefully:**
-- Press `Ctrl+C` in Terminal 1 (API)
-- Press `Ctrl+C` in Terminal 2 (Worker)
-
-**Stop infrastructure:**
-```bash
-make down
-```
-
-## Running the Application
-
-The project has **two services** that need to be run separately:
-1. **API Server** (`cmd/app`) - HTTP REST API on port 8080
-2. **Worker** (`cmd/worker`) - Kafka message consumer
-
 
 ## API Endpoints
 
@@ -255,21 +195,6 @@ The project has **two services** that need to be run separately:
 ### Observability
 - `GET /metrics`: Prometheus metrics endpoint
 
-## Observability & Monitoring
-
-### Prometheus
-- **URL**: http://localhost:9090
-- **Metrics**: Request count, duration, active requests (CCU)
-
-### Grafana
-- **URL**: http://localhost:3000
-- **Credentials**: admin/admin
-- **Data Source**: Prometheus (http://prometheus:9090)
-
-### Jaeger
-- **URL**: http://localhost:16686
-- **Features**: Distributed tracing for all HTTP requests
-
 ### Make Commands
 ```bash
 # Infrastructure
@@ -277,16 +202,10 @@ make up           # Start all Docker services (Postgres, Redis, Kafka, etc.)
 make down         # Stop all Docker services
 
 # API Server
-make run          # Run API server
 make dev          # Run API server with hot reload
-make build        # Build API binary (bin/app)
 
 # Worker
 make dev-worker   # Run worker
-make build-worker # Build worker binary (bin/worker)
-
-# Build both
-make build-all    # Build both API and Worker binaries
 
 # Database
 make migrate-up   # Run migrations
@@ -300,21 +219,3 @@ We have a script to test the full order workflow:
 go run scripts/test_flow/main.go
 ```
 
-## Service Architecture
-
-**API Service** (`internal/api/`)
-- HTTP server with Gin
-- REST endpoints
-- Prometheus metrics
-- OpenTelemetry tracing
-
-**Worker Service** (`internal/worker/`)
-- Kafka Manager (Consumers)
-- Temporal Worker (Workflows & Activities)
-- Event-driven processing
-- Shares domain logic with API
-
-**Shared Modules** (`internal/shared/`)
-- **Domain**: Entities, Value Objects, Repository Interfaces
-- **Application**: Use Cases, Validators
-- **Infrastructure**: Database Implementation, External Service Clients

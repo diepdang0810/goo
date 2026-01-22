@@ -68,6 +68,13 @@ services:
       - "-c"
       - "wal_level=logical"
 
+  migrate:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    depends_on:
+      - postgres
+
   redis:
     image: redis:7-alpine
     container_name: go1_redis

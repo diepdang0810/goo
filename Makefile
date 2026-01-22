@@ -17,10 +17,10 @@ build-all:
 	go build -o bin/worker cmd/worker/main.go
 
 dev:
-	air
+	$(shell go env GOPATH)/bin/air
 
 dev-worker:
-	air -c .air.worker.toml
+	$(shell go env GOPATH)/bin/air -c .air.worker.toml
 
 test:
 	go test -v ./...
@@ -36,7 +36,7 @@ migrate-create:
 	docker run --rm -v $(shell pwd)/migrations:/migrations migrate/migrate create -ext sql -dir /migrations -seq $$name
 
 migrate-up:
-	docker run --rm -v $(shell pwd)/migrations:/migrations --network go1_default migrate/migrate -path=/migrations/ -database "postgres://postgres:postgres@go1_postgres:5432/go1_db?sslmode=disable" up
+	docker-compose run --rm migrate -path=/migrations/ -database "postgres://postgres:postgres@postgres:5432/go1_db?sslmode=disable" up
 
 migrate-down:
-	docker run --rm -v $(shell pwd)/migrations:/migrations --network go1_default migrate/migrate -path=/migrations/ -database "postgres://postgres:postgres@go1_postgres:5432/go1_db?sslmode=disable" down
+	docker-compose run --rm migrate -path=/migrations/ -database "postgres://postgres:postgres@postgres:5432/go1_db?sslmode=disable" down
